@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-multipart
+requests
+python-dotenv
+numpy
+torch
+torchaudio
+transformers
+sentence-transformers
+scikit-learn

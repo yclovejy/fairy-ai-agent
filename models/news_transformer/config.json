@@ -1,0 +1,15 @@
+{
+  "labels": [
+    "体育",
+    "科技",
+    "财经",
+    "娱乐"
+  ],
+  "vocab_size": 350,
+  "embed_dim": 128,
+  "num_heads": 4,
+  "num_layers": 2,
+  "hidden_dim": 256,
+  "dropout": 0.1,
+  "max_len": 128
+}
