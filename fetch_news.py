@@ -1,7 +1,10 @@
-import requests
 import json
 import os
+import subprocess
+import sys
+
 import numpy as np
+import requests
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -13,9 +16,17 @@ NEWS_API = "http://api.xcvts.cn/api/hotlist/qq_news?type=new"
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_PATH = os.path.join(_BASE_DIR, "data", "news.json")
 EMBED_PATH = os.path.join(_BASE_DIR, "data", "news_embeddings.npy")
+GENERATED_TRAIN_PATH = os.path.join(_BASE_DIR, "data", "news_train_generated.jsonl")
 
 SENTENCE_MODEL_NAME = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
 model = None
+
+CATEGORY_KEYWORDS = {
+    "体育": ["比赛", "球队", "联赛", "球员", "进球", "冠军", "篮球", "足球", "体育", "夺冠", "赛季", "奥运"],
+    "科技": ["AI", "人工智能", "芯片", "大模型", "算法", "机器人", "科技", "数据", "算力", "互联网", "软件", "智能"],
+    "财经": ["股市", "经济", "财经", "投资", "融资", "市场", "基金", "银行", "企业", "盈利", "债券", "金融"],
+    "娱乐": ["电影", "明星", "票房", "综艺", "娱乐", "演唱会", "电视剧", "粉丝", "艺人", "上映", "导演", "音乐"],
+}
 
 
 def get_embedding_model():
@@ -115,14 +126,112 @@ def build_embeddings(news_list):
 
     print("💾 已保存 embeddings")
 
-# ========= 主流程 =========
-if __name__ == "__main__":
+
+def infer_label_from_keywords(text):
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return None
+
+    scores = {}
+    for label, keywords in CATEGORY_KEYWORDS.items():
+        scores[label] = sum(1 for keyword in keywords if keyword in cleaned)
+
+    best_label, best_score = max(scores.items(), key=lambda item: item[1])
+    if best_score <= 0:
+        return None
+
+    tied_labels = [label for label, score in scores.items() if score == best_score]
+    if len(tied_labels) > 1:
+        return None
+    return best_label
+
+
+def build_generated_training_rows(news_list):
+    rows = []
+    seen_texts = set()
+
+    for news in news_list:
+        title = (news.get("title") or "").strip()
+        content = (news.get("content") or "").strip()
+        text = f"{title} {content}".strip()
+        if not text or text in seen_texts:
+            continue
+
+        label = infer_label_from_keywords(text)
+        if not label:
+            continue
+
+        rows.append({"text": text, "label": label})
+        seen_texts.add(text)
+
+    print(f"🧪 生成弱监督训练样本: {len(rows)}条")
+    return rows
+
+
+def save_generated_training_rows(rows):
+    os.makedirs(os.path.dirname(GENERATED_TRAIN_PATH), exist_ok=True)
+    with open(GENERATED_TRAIN_PATH, "w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    print("💾 已保存 news_train_generated.jsonl")
+
+
+def train_transformer_if_needed(train_enabled, rows):
+    if not train_enabled:
+        print("⏭️ 已关闭自动 Transformer 训练")
+        return
+
+    if not rows:
+        print("⚠️ 没有可用的新增训练样本，跳过 Transformer 训练")
+        return
+
+    extra_epochs = os.getenv("NEWS_TRAIN_EPOCHS", "4").strip() or "4"
+    batch_size = os.getenv("NEWS_TRAIN_BATCH_SIZE", "8").strip() or "8"
+
+    cmd = [
+        sys.executable,
+        "train_transformer_news.py",
+        "--data-path",
+        os.path.join("data", "news_train.jsonl"),
+        "--data-path",
+        os.path.join("data", "news_train_generated.jsonl"),
+        "--epochs",
+        extra_epochs,
+        "--batch-size",
+        batch_size,
+    ]
+
+    print("🧠 开始训练 Transformer 分类器...")
+    completed = subprocess.run(cmd, cwd=_BASE_DIR, check=False)
+    if completed.returncode == 0:
+        print("✅ Transformer 训练完成")
+    else:
+        print(f"❌ Transformer 训练失败，退出码: {completed.returncode}")
+
+
+def run_news_pipeline(train_transformer=False):
     old_news = load_old_news()
     new_news = fetch_news()
 
-    if new_news:
-        merged_news = merge_news(old_news, new_news) #合并去重
-        save_news(merged_news)
-        build_embeddings(merged_news)
-    else:
+    if not new_news:
         print("⚠️ 没有数据，不更新")
+        return False
+
+    merged_news = merge_news(old_news, new_news)
+    if merged_news == old_news:
+        print("ℹ️ 新闻列表无新增内容，跳过重建与训练")
+        return False
+
+    save_news(merged_news)
+    build_embeddings(merged_news)
+
+    generated_rows = build_generated_training_rows(merged_news)
+    save_generated_training_rows(generated_rows)
+    train_transformer_if_needed(train_transformer, generated_rows)
+    return True
+
+# ========= 主流程 =========
+if __name__ == "__main__":
+    train_enabled = os.getenv("NEWS_AUTO_TRAIN_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    run_news_pipeline(train_transformer=train_enabled)

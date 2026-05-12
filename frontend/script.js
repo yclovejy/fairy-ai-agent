@@ -5,6 +5,9 @@ const welcomeScreen = document.getElementById("welcome-screen");
 const statusBadge = document.getElementById("status-badge");
 const newChatBtn = document.getElementById("new-chat-btn");
 const clearChatBtn = document.getElementById("clear-chat-btn");
+const sidebar = document.querySelector(".sidebar");
+const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+const sidebarOverlay = document.getElementById("sidebar-overlay");
 const suggestionCards = document.querySelectorAll(".suggestion-card");
 const modelSelect = document.getElementById("model-select");
 const voiceBtn = document.getElementById("voice-btn");
@@ -49,6 +52,7 @@ function init() {
         currentModel = e.target.value;
     });
 
+    initSidebar();
     initVoiceRecognition();
 
     loadChatHistory();
@@ -95,6 +99,7 @@ async function sendMessage() {
 async function submitMessage(message) {
     if (isLoading) return;
 
+    closeSidebar();
     userInput.value = "";
     autoResize();
     
@@ -158,6 +163,7 @@ async function submitMessage(message) {
 async function sendVoiceMessage(transcript) {
     if (isLoading || !transcript) return;
 
+    closeSidebar();
     if (welcomeScreen) {
         welcomeScreen.style.display = "none";
     }
@@ -306,6 +312,32 @@ function scrollToBottom() {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function initSidebar() {
+    if (!sidebar || !sidebarToggleBtn || !sidebarOverlay) return;
+
+    sidebarToggleBtn.addEventListener("click", toggleSidebar);
+    sidebarOverlay.addEventListener("click", closeSidebar);
+
+    window.addEventListener("resize", () => {
+        if (window.innerWidth > 768) {
+            closeSidebar();
+        }
+    });
+}
+
+function toggleSidebar() {
+    if (!sidebar) return;
+
+    const isOpen = sidebar.classList.toggle("open");
+    document.body.classList.toggle("sidebar-open", isOpen);
+}
+
+function closeSidebar() {
+    if (!sidebar) return;
+    sidebar.classList.remove("open");
+    document.body.classList.remove("sidebar-open");
+}
+
 function updateSendButton() {
     sendBtn.disabled = isLoading;
     if (voiceBtn) {
@@ -319,7 +351,8 @@ function newChat() {
             return;
         }
     }
-    
+
+    closeSidebar();
     chatTurns = [];
     localStorage.removeItem("chatHistory");
     
@@ -333,7 +366,8 @@ function newChat() {
 
 function clearChat() {
     if (!confirm("确定要清空所有对话记录吗？")) return;
-    
+
+    closeSidebar();
     chatTurns = [];
     localStorage.removeItem("chatHistory");
     

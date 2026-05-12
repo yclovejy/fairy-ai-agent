@@ -23,7 +23,7 @@
 4. 等待VS Code重新加载Python环境
 
 ### 方法3：使用工作区文件
-1. 在VS Code中打开 `ai_agent.code-workspace` 文件
+1. 在VS Code中打开 `.vscode/ai_agent.code-workspace` 文件
 2. 选择 "Open Workspace"
 3. VS Code会自动应用正确的配置
 

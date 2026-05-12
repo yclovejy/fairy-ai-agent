@@ -1,0 +1,32 @@
+services:
+  ai-agent-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.11-slim}
+    container_name: ai-agent-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_RELOAD: "false"
+      PORT: 8000
+      NEWS_AUTO_REFRESH_ENABLED: ${NEWS_AUTO_REFRESH_ENABLED:-true}
+      NEWS_REFRESH_ON_START: ${NEWS_REFRESH_ON_START:-true}
+      NEWS_REFRESH_INTERVAL_SECONDS: ${NEWS_REFRESH_INTERVAL_SECONDS:-1800}
+      NEWS_AUTO_TRAIN_ENABLED: ${NEWS_AUTO_TRAIN_ENABLED:-true}
+      NEWS_TRAIN_EPOCHS: ${NEWS_TRAIN_EPOCHS:-4}
+      NEWS_TRAIN_BATCH_SIZE: ${NEWS_TRAIN_BATCH_SIZE:-8}
+    ports:
+      - "${PUBLIC_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ping', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

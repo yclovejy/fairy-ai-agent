@@ -1,30 +1,68 @@
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 import json
 import os
 import re
+import socket
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from agent_v5 import agent_answer  # V5版Agent
 from news_intelligence import NewsIntelligenceService
+from scheduler import start_background_scheduler
 from voice_service import whisper_service
 
 app = FastAPI()
 news_service = NewsIntelligenceService()
 
-# 允许前端访问（端口3000）
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+
+@app.on_event("startup")
+def startup_tasks():
+    start_background_scheduler()
+
+def _parse_origin_list(raw_value: str) -> list[str]:
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+def _build_allowed_origins() -> list[str]:
+    defaults = [
         "http://127.0.0.1:3000",
         "http://localhost:3000",
-        "http://127.0.0.1:8000",  # 如果需要同源测试
-    ],
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ]
+    extra = _parse_origin_list(os.getenv("CORS_ALLOW_ORIGINS", ""))
+    merged: list[str] = []
+    for origin in defaults + extra:
+        if origin not in merged:
+            merged.append(origin)
+    return merged
+
+
+def _get_local_ip() -> str:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
+
+
+# 允许本机、局域网和显式配置的前端来源访问
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_build_allowed_origins(),
+    allow_origin_regex=os.getenv(
+        "CORS_ALLOW_ORIGIN_REGEX",
+        r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$",
+    ),
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,  # 如果需要携带cookie
+    allow_credentials=False,
 )
 
 # -------- Frontend --------
@@ -35,6 +73,15 @@ app.mount("/static", StaticFiles(directory=_FRONTEND_DIR), name="static")
 @app.get("/")
 def index():
     return FileResponse(os.path.join(_FRONTEND_DIR, "index.html"))
+
+
+@app.get("/server-info")
+def server_info():
+    port = int(os.getenv("APP_PORT", os.getenv("PORT", "8000")))
+    return {
+        "local_url": f"http://127.0.0.1:{port}",
+        "lan_url": f"http://{_get_local_ip()}:{port}",
+    }
 
 # -------- API --------
 class Query(BaseModel):
@@ -114,3 +161,13 @@ async def voice_chat(
 @app.get("/ping")
 def ping():
     return {"message": "AI Agent 后端运行中"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    host = os.getenv("APP_HOST", "0.0.0.0")
+    port = int(os.getenv("APP_PORT", os.getenv("PORT", "8000")))
+    reload_enabled = os.getenv("APP_RELOAD", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+    uvicorn.run("app:app", host=host, port=port, reload=reload_enabled)

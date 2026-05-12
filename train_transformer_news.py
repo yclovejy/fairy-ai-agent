@@ -22,14 +22,30 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def load_dataset(path: str) -> list[dict[str, str]]:
+def load_dataset(paths: list[str]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
+    seen = set()
+
+    for path in paths:
+        if not os.path.exists(path):
+            print(f"跳过不存在的数据文件: {path}")
+            continue
+
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                row = json.loads(line)
+                text = row.get("text", "").strip()
+                label = row.get("label", "").strip()
+                key = (text, label)
+                if not text or not label or key in seen:
+                    continue
+
+                rows.append({"text": text, "label": label})
+                seen.add(key)
     return rows
 
 
@@ -92,14 +108,25 @@ def evaluate(model: TransformerNewsClassifier, dataloader: DataLoader, device: t
 
 def train(args: argparse.Namespace) -> None:
     set_seed(args.seed)
-    rows = load_dataset(DATA_PATH)
+    data_paths = args.data_path or [DATA_PATH]
+    rows = load_dataset(data_paths)
     label_to_id = {label: idx for idx, label in enumerate(LABELS)}
+
+    if len(rows) < 8:
+        print(f"训练样本不足，当前仅有 {len(rows)} 条，至少需要 8 条。")
+        return
+
+    label_counts = Counter(row["label"] for row in rows)
+    available_labels = [label for label, count in label_counts.items() if count > 0]
+    if len(available_labels) < 2:
+        print("训练样本类别不足，至少需要两个类别。")
+        return
 
     train_rows, val_rows = train_test_split(
         rows,
         test_size=args.val_ratio,
         random_state=args.seed,
-        stratify=[row["label"] for row in rows],
+        stratify=[row["label"] for row in rows] if min(label_counts.values()) >= 2 else None,
     )
 
     vocab = build_vocab([row["text"] for row in train_rows], min_freq=1)
@@ -186,6 +213,7 @@ def train(args: argparse.Namespace) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="训练简易 Transformer 新闻分类模型")
+    parser.add_argument("--data-path", action="append", dest="data_path", help="可重复传入多个训练数据文件路径")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=1e-3)

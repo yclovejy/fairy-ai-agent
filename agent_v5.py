@@ -3,6 +3,7 @@ import json
 from dotenv import load_dotenv
 import os
 import re
+import threading
 import requests
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -27,6 +28,12 @@ embedding_model = None
 embedding_provider = "tfidf"
 news_vectorizer = None
 news_intelligence = NewsIntelligenceService()
+_news_asset_lock = threading.Lock()
+_news_assets_signature = None
+NEWS_HINT_WORDS = [
+    "新闻", "热点", "舆情", "情感分析", "最近发生", "最新", "今日", "今天",
+    "股市", "财经", "科技", "娱乐", "体育", "比赛", "夺冠", "票房", "AI",
+]
 # ========= 数据 =========
 QWEATHER_API_KEY = os.getenv("QWEATHER_API_KEY")
 QWEATHER_HOST = os.getenv("QWEATHER_HOST")
@@ -65,6 +72,16 @@ def load_embeddings():
     if not os.path.exists(EMBED_PATH):
         return None
     return np.load(EMBED_PATH)
+
+
+def get_news_assets_signature():
+    signature = []
+    for path in [NEWS_PATH, EMBED_PATH]:
+        try:
+            signature.append((path, os.path.getmtime(path), os.path.getsize(path)))
+        except OSError:
+            signature.append((path, None, None))
+    return tuple(signature)
 
 news_list = load_news()
 news_embeddings = load_embeddings()
@@ -113,12 +130,28 @@ def prepare_news_embeddings():
     embedding_provider = "tfidf"
 
 prepare_news_embeddings()
+_news_assets_signature = get_news_assets_signature()
 
 def reload_news():
-    global news_list, news_embeddings
+    global news_list, news_embeddings, _news_assets_signature
     news_list = load_news()
     prepare_news_embeddings()
+    _news_assets_signature = get_news_assets_signature()
     print("新闻数据已更新并重建embedding")
+
+
+def ensure_latest_news_assets():
+    global _news_assets_signature
+
+    current_signature = get_news_assets_signature()
+    if current_signature == _news_assets_signature:
+        return
+
+    with _news_asset_lock:
+        current_signature = get_news_assets_signature()
+        if current_signature == _news_assets_signature:
+            return
+        reload_news()
 
 # ========= 工具 =========
 def keyword_match(query, top_k=10):
@@ -210,6 +243,8 @@ def format_local_news_answer(query, result, analysis):
 
 # ========= 新闻Agent =========
 def news_agent(query):
+    ensure_latest_news_assets()
+    news_intelligence.refresh_if_needed()
     result = retrieve_news(query)
     analysis = news_intelligence.analyze_news_list(result, top_k=5)
     analysis_block = format_analysis_block(analysis)
@@ -418,7 +453,11 @@ def tool_agent(query):
 # ========= 决策Agent =========
 def decide_agent(query):
     lowered = query.lower()
-    if any(word in query for word in ["新闻", "热点", "舆情", "情感分析", "AI行业", "最近发生"]) or "news" in lowered:
+    if any(word in query for word in NEWS_HINT_WORDS) or "news" in lowered:
+        return "news"
+    if re.search(r"(最近|最新|今日|今天).*(发生|情况|动态|走势|消息)", query):
+        return "news"
+    if re.search(r"(科技|财经|娱乐|体育|AI).*(新闻|动态|热点|情况|走势)", query):
         return "news"
     if any(word in query for word in ["天气", "气温", "下雨", "温度"]):
         return "weather"

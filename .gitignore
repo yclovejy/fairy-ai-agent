@@ -6,10 +6,13 @@ __pycache__/
 .env
 venv/
 env/
+.claude/
+.idea/
 
 # 数据文件（非常重要）
 data/*.json
 data/*.npy
+data/news_train_generated.jsonl
 
 # macOS
 .DS_Store

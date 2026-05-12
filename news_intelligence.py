@@ -219,10 +219,25 @@ class NewsIntelligenceService:
         self.tokenizer: CharTokenizer | None = None
         self.device = torch.device("cpu")
         self.config: dict[str, Any] = {}
+        self._model_signature: tuple[Any, ...] | None = None
         self._load_classifier()
 
+    def _build_model_signature(self) -> tuple[Any, ...]:
+        signature = []
+        for path in [MODEL_PATH, VOCAB_PATH, CONFIG_PATH]:
+            try:
+                signature.append((path, os.path.getmtime(path), os.path.getsize(path)))
+            except OSError:
+                signature.append((path, None, None))
+        return tuple(signature)
+
     def _load_classifier(self) -> None:
+        self.model = None
+        self.tokenizer = None
+        self.config = {}
+
         if not (os.path.exists(MODEL_PATH) and os.path.exists(VOCAB_PATH) and os.path.exists(CONFIG_PATH)):
+            self._model_signature = self._build_model_signature()
             return
 
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -242,11 +257,18 @@ class NewsIntelligenceService:
         state_dict = torch.load(MODEL_PATH, map_location=self.device)
         self.model.load_state_dict(state_dict)
         self.model.eval()
+        self._model_signature = self._build_model_signature()
+
+    def refresh_if_needed(self) -> None:
+        signature = self._build_model_signature()
+        if signature != self._model_signature:
+            self._load_classifier()
 
     def has_trained_classifier(self) -> bool:
         return self.model is not None and self.tokenizer is not None
 
     def predict_category(self, text: str) -> tuple[str, dict[str, float], str]:
+        self.refresh_if_needed()
         if self.model is None or self.tokenizer is None:
             scores = keyword_category_scores(text)
             label = max(scores, key=scores.get)

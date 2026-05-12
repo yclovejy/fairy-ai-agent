@@ -9,6 +9,7 @@
 </head>
 <body>
     <div class="app-container">
+        <button class="sidebar-overlay" id="sidebar-overlay" aria-label="关闭侧边栏"></button>
         <aside class="sidebar" aria-label="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
@@ -47,6 +48,13 @@
         <main class="chat-main">
             <header class="chat-header">
                 <div class="header-left">
+                    <button class="mobile-menu-btn" id="sidebar-toggle-btn" type="button" title="打开菜单">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
                     <h1 class="chat-title">Fairy AI News Lab</h1>
                     <span class="status-badge" id="status-badge">
                         <span class="status-dot online"></span>
