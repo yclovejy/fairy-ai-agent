@@ -243,9 +243,29 @@ def build_news_prompt(query, result, analysis_block):
 """
 
 
+def build_news_fallback_prompt(query):
+    return f"""
+用户正在询问新闻或热点问题，但本地新闻数据库暂时没有可用检索结果。
+
+用户问题：
+{query}
+
+请用你的通用知识和推理能力兜底回答。
+
+回答要求：
+1. 不要说“没有检索到相关新闻”。
+2. 如果问题明显要求最新实时新闻，请先说明“本地新闻库暂时没有检索结果，我先基于大模型知识给出参考分析”，避免假装已经联网看到最新消息。
+3. 给出可操作、条理清晰的分析；可以补充用户接下来可以关注哪些关键词或方向。
+4. 语气自然，像 Fairy 在认真帮用户兜底。
+"""
+
+
 def format_local_news_answer(query, result, analysis):
     if not result:
-        return "没有检索到相关新闻，你可以换个关键词再试试。"
+        return (
+            "本地新闻库暂时没有可用结果。我可以先做通用分析；"
+            "如果要看实时热点，请稍后再试，系统会继续自动更新新闻库。"
+        )
 
     lines = [
         f"问题：{query}",
@@ -263,11 +283,29 @@ def news_agent(query):
     ensure_news_available()
     news_intelligence.refresh_if_needed()
     result = retrieve_news(query)
-    analysis = news_intelligence.analyze_news_list(result, top_k=5)
-    analysis_block = format_analysis_block(analysis)
 
     if not deepseek_client.is_enabled():
+        analysis = news_intelligence.analyze_news_list(result, top_k=5)
         return format_local_news_answer(query, result, analysis)
+
+    if not result:
+        try:
+            answer = deepseek_client.chat(
+                messages=[
+                    {"role": "system", "content": "你是 Fairy，一名可靠的中文新闻与热点分析助手。"},
+                    {"role": "user", "content": safe_text(build_news_fallback_prompt(query))},
+                ],
+                temperature=0.45,
+                max_tokens=1000,
+            )
+            return safe_text(answer)
+        except Exception as e:
+            print("DeepSeek 新闻兜底失败:", e)
+            analysis = news_intelligence.analyze_news_list(result, top_k=5)
+            return format_local_news_answer(query, result, analysis)
+
+    analysis = news_intelligence.analyze_news_list(result, top_k=5)
+    analysis_block = format_analysis_block(analysis)
 
     try:
         answer = deepseek_client.chat(
