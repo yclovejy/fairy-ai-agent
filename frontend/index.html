@@ -3,142 +3,214 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fairy AI News Lab</title>
+    <title>Fairy</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='44' fill='%232568f4'/%3E%3Ccircle cx='50' cy='50' r='25' fill='white'/%3E%3Ccircle cx='50' cy='50' r='13' fill='%23095adf'/%3E%3C/svg%3E">
 </head>
 <body>
     <div class="app-container">
         <button class="sidebar-overlay" id="sidebar-overlay" aria-label="关闭侧边栏"></button>
-        <aside class="sidebar" aria-label="sidebar">
-            <div class="sidebar-header">
-                <div class="logo">
-                    <span class="logo-icon">✨</span>
-                    <span class="logo-text">fairy</span>
-                </div>
-                <button class="new-chat-btn" id="new-chat-btn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                    新对话
-                </button>
-            </div>
-            <div class="sidebar-content">
-                <div class="chat-history" id="chat-history">
-                    <div class="chat-history-item active">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                        </svg>
-                        <span>当前对话</span>
+
+        <aside class="sidebar" aria-label="主导航">
+            <div class="brand-row">
+                <div class="brand-mark agent-eye agent-eye-mini" aria-hidden="true">
+                    <div class="eye-shell">
+                        <div class="eye-white">
+                            <div class="iris"></div>
+                            <div class="catchlight"></div>
+                        </div>
+                        <div class="eyelid"></div>
                     </div>
                 </div>
+                <strong>Fairy</strong>
+                <button class="sidebar-tool" type="button" title="折叠菜单" aria-label="折叠菜单">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 6h10M8 12h10M8 18h10M4 6h.01M4 12h.01M4 18h.01"></path>
+                    </svg>
+                </button>
             </div>
-            <div class="sidebar-footer">
-                <div class="model-selector">
-                    <select id="model-select">
-                        <option value="default">🤖 默认</option>
-                        <option value="fast">⚡ 快速响应</option>
-                        <option value="creative">💡 创意模式</option>
-                    </select>
+
+            <button class="new-chat-btn" id="new-chat-btn" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14"></path>
+                </svg>
+                <span>新建对话</span>
+                <kbd>⌘K</kbd>
+            </button>
+
+            <nav class="nav-list" aria-label="Fairy 功能">
+                <button class="nav-item active" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
+                    </svg>
+                    <span>对话</span>
+                </button>
+                <button class="nav-item" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <path d="m15 9-2.2 5.2L8 16l2.2-5.2z"></path>
+                    </svg>
+                    <span>探索</span>
+                </button>
+                <button class="nav-item" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="6" y="8" width="12" height="10" rx="3"></rect>
+                        <path d="M12 4v4M9 13h.01M15 13h.01M8 20h8"></path>
+                    </svg>
+                    <span>智能体</span>
+                </button>
+                <button class="nav-item" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 10h16v10H4zM7 10V7a5 5 0 0 1 10 0v3"></path>
+                    </svg>
+                    <span>插件商店</span>
+                </button>
+            </nav>
+
+            <div class="history-section">
+                <p class="history-label">今天</p>
+                <div class="chat-history" id="chat-history">
+                    <button class="history-item active" type="button">
+                        <span>量子计算的未来发展趋势</span>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 6h.01M12 12h.01M12 18h.01"></path>
+                        </svg>
+                    </button>
+                    <button class="history-item" type="button">如何提升工作效率</button>
+                    <button class="history-item" type="button">AI在教育领域的应用</button>
+                    <button class="history-item" type="button">推荐几本AI入门书籍</button>
+                    <button class="history-item" type="button">帮我写一份产品需求文档</button>
                 </div>
+                <p class="history-label">昨天</p>
+                <button class="history-item" type="button">介绍一下大语言模型</button>
+                <button class="history-item" type="button">AI绘图工具有哪些</button>
+                <button class="show-all-btn" type="button">
+                    <span>查看全部对话</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m6 9 6 6 6-6"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="profile-card">
+                <div class="profile-avatar" aria-hidden="true"></div>
+                <div>
+                    <strong>StarDust</strong>
+                    <span>Pro</span>
+                </div>
+                <button class="profile-menu" type="button" aria-label="更多账号选项">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 6h.01M12 12h.01M12 18h.01"></path>
+                    </svg>
+                </button>
             </div>
         </aside>
 
         <main class="chat-main">
             <header class="chat-header">
                 <div class="header-left">
-                    <button class="mobile-menu-btn" id="sidebar-toggle-btn" type="button" title="打开菜单">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="3" y1="12" x2="21" y2="12"></line>
-                            <line x1="3" y1="6" x2="21" y2="6"></line>
-                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                    <button class="mobile-menu-btn" id="sidebar-toggle-btn" type="button" title="打开菜单" aria-label="打开菜单">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M4 7h16M4 12h16M4 17h16"></path>
                         </svg>
                     </button>
-                    <h1 class="chat-title">Fairy AI News Lab</h1>
+                    <h1 class="chat-title">Fairy</h1>
+                    <button class="title-switch" type="button" aria-label="切换工作模式">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m6 9 6 6 6-6"></path>
+                        </svg>
+                    </button>
                     <span class="status-badge" id="status-badge">
                         <span class="status-dot online"></span>
                         在线
                     </span>
                 </div>
                 <div class="header-actions">
-                    <button class="icon-btn" id="clear-chat-btn" title="清空对话">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <button class="icon-btn" id="spark-btn" type="button" title="灵感" aria-label="灵感">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"></path>
                         </svg>
                     </button>
-                    <button class="icon-btn" id="settings-btn" title="设置">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="3"></circle>
-                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    <button class="icon-btn text-btn" id="share-btn" type="button">分享</button>
+                    <button class="icon-btn" id="clear-chat-btn" type="button" title="清空对话" aria-label="清空对话">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 6h.01M12 12h.01M12 18h.01"></path>
                         </svg>
                     </button>
                 </div>
             </header>
 
             <div class="chat-messages" id="chat-messages">
-                <div class="welcome-screen" id="welcome-screen">
-                    <div class="welcome-icon">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path>
-                            <path d="M12 6v6l4 2"></path>
-                        </svg>
+                <section class="welcome-screen" id="welcome-screen" aria-label="Fairy 欢迎页">
+                    <div class="agent-stage">
+                        <div class="agent-aura" aria-hidden="true"></div>
+                        <div class="agent-eye agent-eye-hero" id="agent-eye" aria-label="Fairy 智能体头像" role="img">
+                            <div class="eye-shell">
+                                <div class="eye-white">
+                                    <div class="iris"></div>
+                                    <div class="catchlight"></div>
+                                </div>
+                                <div class="eyelid"></div>
+                                <div class="thinking-line"></div>
+                            </div>
+                        </div>
                     </div>
-                    <h2>你好，我是 fairy AI</h2>
-                    <p>我现在支持新闻 RAG、Transformer 分类、情感分析、语音问答和语音播报<br>可以直接问我最近热点，也可以点击麦克风说话</p>
-                    <div class="suggestion-cards">
-                        <button class="suggestion-card" data-prompt="最近AI行业有什么新闻？">
-                            <span class="card-icon">🤖</span>
-                            <span>最近AI行业有什么新闻？</span>
-                        </button>
-                        <button class="suggestion-card" data-prompt="帮我分析一下最近财经新闻的情感倾向">
-                            <span class="card-icon">📊</span>
-                            <span>分析财经新闻情感</span>
-                        </button>
-                        <button class="suggestion-card" data-prompt="总结一下今天的科技热点">
-                            <span class="card-icon">🧠</span>
-                            <span>总结今天科技热点</span>
-                        </button>
-                        <button class="suggestion-card" data-prompt="北京今天天气怎么样">
-                            <span class="card-icon">🌤️</span>
-                            <span>北京今天天气怎么样</span>
-                        </button>
-                    </div>
-                </div>
+                    <h2>我是 Fairy，你的智能管家</h2>
+                </section>
             </div>
 
-            <div class="input-area">
+            <div class="quick-prompts" id="quick-prompts" aria-label="推荐问题">
+                <button class="suggestion-card" data-prompt="量子计算如何影响加密技术？" type="button">量子计算如何影响加密技术？</button>
+                <button class="suggestion-card" data-prompt="目前量子计算的主要挑战是什么？" type="button">目前量子计算的主要挑战是什么？</button>
+                <button class="suggestion-card" data-prompt="量子计算与人工智能的结合前景如何？" type="button">量子计算与人工智能的结合前景如何？</button>
+                <button class="refresh-prompts" type="button" aria-label="换一批问题">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M20 12a8 8 0 0 1-13.6 5.7M4 12A8 8 0 0 1 17.6 6.3M17 3v4h4M7 21v-4H3"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <form class="input-area" id="chat-form">
                 <div class="input-wrapper">
-                    <button class="voice-btn" id="voice-btn" title="语音输入">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 1a3 3 0 0 1 3 3v8a3 3 0 0 1-6 0V4a3 3 0 0 1 3-3z"></path>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                            <line x1="12" y1="19" x2="12" y2="23"></line>
-                            <line x1="8" y1="23" x2="16" y2="23"></line>
-                        </svg>
-                    </button>
-                    <button class="input-actions-btn" id="input-actions-btn" title="更多功能">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                    </button>
-                    <textarea 
-                        id="user-input" 
-                        placeholder="发送消息..." 
+                    <textarea
+                        id="user-input"
+                        placeholder="输入消息，Enter 发送，Shift + Enter 换行"
                         rows="1"
                         autocomplete="off"
                     ></textarea>
-                    <button class="send-btn" id="send-btn">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="22" y1="2" x2="11" y2="13"></line>
-                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                        </svg>
-                    </button>
+                    <div class="input-toolbar">
+                        <button class="tool-btn" id="input-actions-btn" type="button" title="添加附件" aria-label="添加附件">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="m21.4 11.6-8.7 8.7a6 6 0 0 1-8.5-8.5l9.3-9.3a4 4 0 1 1 5.7 5.7l-9.4 9.4a2 2 0 0 1-2.8-2.8l8.7-8.7"></path>
+                            </svg>
+                        </button>
+                        <button class="tool-btn" type="button" title="联网搜索" aria-label="联网搜索">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path>
+                            </svg>
+                        </button>
+                        <button class="search-toggle" type="button">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"></path>
+                            </svg>
+                            联网搜索
+                        </button>
+                        <span class="toolbar-spacer"></span>
+                        <button class="tool-btn voice-btn" id="voice-btn" type="button" title="语音输入" aria-label="语音输入">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM19 11v1a7 7 0 0 1-14 0v-1M12 19v3M8 22h8"></path>
+                            </svg>
+                        </button>
+                        <button class="send-btn" id="send-btn" type="submit" aria-label="发送">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 19V5M5 12l7-7 7 7"></path>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
-                <p class="disclaimer" id="voice-hint">AI生成内容仅供参考，请核实重要信息</p>
-            </div>
+                <p class="voice-hint" id="voice-hint">AI 生成内容仅供参考，请核实重要信息</p>
+            </form>
         </main>
     </div>
 

@@ -153,6 +153,23 @@ def ensure_latest_news_assets():
             return
         reload_news()
 
+
+def ensure_news_available():
+    if news_list:
+        ensure_latest_news_assets()
+        return
+
+    print("新闻数据为空，尝试立即抓取一次...")
+    try:
+        from fetch_news import run_news_pipeline
+        updated = run_news_pipeline(train_transformer=False)
+    except Exception as exc:
+        print("新闻即时抓取失败:", exc)
+        updated = False
+
+    if updated or os.path.exists(NEWS_PATH):
+        reload_news()
+
 # ========= 工具 =========
 def keyword_match(query, top_k=10):
     results = []
@@ -243,7 +260,7 @@ def format_local_news_answer(query, result, analysis):
 
 # ========= 新闻Agent =========
 def news_agent(query):
-    ensure_latest_news_assets()
+    ensure_news_available()
     news_intelligence.refresh_if_needed()
     result = retrieve_news(query)
     analysis = news_intelligence.analyze_news_list(result, top_k=5)

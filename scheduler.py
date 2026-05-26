@@ -17,7 +17,7 @@ def env_flag(name, default):
 
 def run_fetch_cycle():
     print("开始更新新闻...")
-    train_enabled = env_flag("NEWS_AUTO_TRAIN_ENABLED", True)
+    train_enabled = env_flag("NEWS_AUTO_TRAIN_ENABLED", False)
     run_news_pipeline(train_transformer=train_enabled)
 
 

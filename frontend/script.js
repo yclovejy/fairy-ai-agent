@@ -1,10 +1,13 @@
 const sendBtn = document.getElementById("send-btn");
+const chatForm = document.getElementById("chat-form");
 const userInput = document.getElementById("user-input");
 const chatMessages = document.getElementById("chat-messages");
 const welcomeScreen = document.getElementById("welcome-screen");
 const statusBadge = document.getElementById("status-badge");
 const newChatBtn = document.getElementById("new-chat-btn");
 const clearChatBtn = document.getElementById("clear-chat-btn");
+const agentEye = document.getElementById("agent-eye");
+const quickPrompts = document.getElementById("quick-prompts");
 const sidebar = document.querySelector(".sidebar");
 const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
 const sidebarOverlay = document.getElementById("sidebar-overlay");
@@ -26,8 +29,15 @@ let speechSynthesisEnabled = "speechSynthesis" in window;
 
 function init() {
     checkBackendStatus();
-    
-    sendBtn.addEventListener("click", sendMessage);
+
+    if (chatForm) {
+        chatForm.addEventListener("submit", (e) => {
+            e.preventDefault();
+            sendMessage();
+        });
+    } else {
+        sendBtn.addEventListener("click", sendMessage);
+    }
     
     userInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -48,9 +58,11 @@ function init() {
         });
     });
 
-    modelSelect.addEventListener("change", (e) => {
-        currentModel = e.target.value;
-    });
+    if (modelSelect) {
+        modelSelect.addEventListener("change", (e) => {
+            currentModel = e.target.value;
+        });
+    }
 
     initSidebar();
     initVoiceRecognition();
@@ -110,6 +122,7 @@ async function submitMessage(message) {
     addMessage("user", message);
 
     isLoading = true;
+    setAgentThinking(true);
     updateSendButton();
     
     const loadingMessage = addLoadingMessage();
@@ -156,6 +169,7 @@ async function submitMessage(message) {
         addMessage("error", errorMsg);
     } finally {
         isLoading = false;
+        setAgentThinking(false);
         updateSendButton();
     }
 }
@@ -170,6 +184,7 @@ async function sendVoiceMessage(transcript) {
 
     addMessage("user", transcript);
     isLoading = true;
+    setAgentThinking(true);
     updateSendButton();
 
     const loadingMessage = addLoadingMessage();
@@ -202,6 +217,7 @@ async function sendVoiceMessage(transcript) {
         addMessage("error", error.message || "语音请求失败，请稍后重试");
     } finally {
         isLoading = false;
+        setAgentThinking(false);
         updateSendButton();
         setVoiceHint("AI生成内容仅供参考，请核实重要信息");
         setVoiceRecording(false);
@@ -214,7 +230,12 @@ function addMessage(role, content, options = {}) {
     
     const avatar = document.createElement("div");
     avatar.className = "message-avatar";
-    avatar.textContent = role === "user" ? "👤" : "✨";
+    if (role === "user") {
+        avatar.classList.add("user-avatar");
+    } else {
+        avatar.classList.add("agent-avatar");
+        avatar.appendChild(createAgentEyeAvatar());
+    }
     
     const contentDiv = document.createElement("div");
     contentDiv.className = "message-content";
@@ -244,6 +265,7 @@ function addMessage(role, content, options = {}) {
     messageDiv.appendChild(contentDiv);
     
     chatMessages.appendChild(messageDiv);
+    updateChatSurfaceState();
     scrollToBottom();
     
     return messageDiv;
@@ -254,8 +276,8 @@ function addLoadingMessage() {
     messageDiv.className = "message loading";
     
     const avatar = document.createElement("div");
-    avatar.className = "message-avatar";
-    avatar.textContent = "✨";
+    avatar.className = "message-avatar agent-avatar";
+    avatar.appendChild(createAgentEyeAvatar(true));
     
     const contentDiv = document.createElement("div");
     contentDiv.className = "message-content";
@@ -273,9 +295,45 @@ function addLoadingMessage() {
     messageDiv.appendChild(contentDiv);
     
     chatMessages.appendChild(messageDiv);
+    updateChatSurfaceState();
     scrollToBottom();
     
     return messageDiv;
+}
+
+function createAgentEyeAvatar(thinking = false) {
+    const eye = document.createElement("div");
+    eye.className = `agent-eye agent-eye-mini${thinking ? " thinking" : ""}`;
+    eye.setAttribute("aria-hidden", "true");
+    eye.innerHTML = `
+        <div class="eye-shell">
+            <div class="eye-white">
+                <div class="iris"></div>
+                <div class="catchlight"></div>
+            </div>
+            <div class="eyelid"></div>
+            <div class="thinking-line"></div>
+        </div>
+    `;
+    return eye;
+}
+
+function setAgentThinking(active) {
+    document.body.classList.toggle("agent-thinking", active);
+    if (agentEye) {
+        agentEye.classList.toggle("thinking", active);
+    }
+}
+
+function updateChatSurfaceState() {
+    const hasMessages = chatMessages.querySelectorAll(".message:not(.loading)").length > 0;
+    const main = document.querySelector(".chat-main");
+    if (main) {
+        main.classList.toggle("has-messages", hasMessages);
+    }
+    if (quickPrompts) {
+        quickPrompts.hidden = !hasMessages;
+    }
 }
 
 function formatContent(text) {
@@ -355,6 +413,7 @@ function newChat() {
     closeSidebar();
     chatTurns = [];
     localStorage.removeItem("chatHistory");
+    setAgentThinking(false);
     
     const messages = chatMessages.querySelectorAll(".message");
     messages.forEach(msg => msg.remove());
@@ -362,6 +421,7 @@ function newChat() {
     if (welcomeScreen) {
         welcomeScreen.style.display = "flex";
     }
+    updateChatSurfaceState();
 }
 
 function clearChat() {
@@ -370,6 +430,7 @@ function clearChat() {
     closeSidebar();
     chatTurns = [];
     localStorage.removeItem("chatHistory");
+    setAgentThinking(false);
     
     const messages = chatMessages.querySelectorAll(".message");
     messages.forEach(msg => msg.remove());
@@ -377,6 +438,7 @@ function clearChat() {
     if (welcomeScreen) {
         welcomeScreen.style.display = "flex";
     }
+    updateChatSurfaceState();
 }
 
 function saveChatHistory() {
@@ -407,6 +469,7 @@ function loadChatHistory() {
     } catch (e) {
         console.warn("无法加载对话历史:", e);
     }
+    updateChatSurfaceState();
 }
 
 function initVoiceRecognition() {
