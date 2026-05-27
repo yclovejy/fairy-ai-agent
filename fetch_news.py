@@ -1,10 +1,14 @@
 import json
 import os
+import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 import numpy as np
 import requests
+
+from deepseek_client import deepseek_client
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -27,6 +31,23 @@ CATEGORY_KEYWORDS = {
     "财经": ["股市", "经济", "财经", "投资", "融资", "市场", "基金", "银行", "企业", "盈利", "债券", "金融"],
     "娱乐": ["电影", "明星", "票房", "综艺", "娱乐", "演唱会", "电视剧", "粉丝", "艺人", "上映", "导演", "音乐"],
 }
+
+
+def env_flag(name, default):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name, default):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
 
 
 def get_embedding_model():
@@ -56,6 +77,7 @@ def fetch_news():
 
     try:
         res = requests.get(NEWS_API, timeout=10)
+        res.raise_for_status()
         data = res.json()
 
         news_list = []
@@ -75,6 +97,102 @@ def fetch_news():
 
     except Exception as e:
         print("❌ 抓取失败:", e)
+        return []
+
+
+def extract_json_payload(text):
+    cleaned = (text or "").strip()
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+
+    candidates = [cleaned]
+    array_start = cleaned.find("[")
+    array_end = cleaned.rfind("]")
+    if array_start != -1 and array_end != -1 and array_end > array_start:
+        candidates.append(cleaned[array_start: array_end + 1])
+
+    object_start = cleaned.find("{")
+    object_end = cleaned.rfind("}")
+    if object_start != -1 and object_end != -1 and object_end > object_start:
+        candidates.append(cleaned[object_start: object_end + 1])
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    raise ValueError("LLM response does not contain valid JSON.")
+
+
+def normalize_llm_news_items(payload):
+    if isinstance(payload, dict):
+        items = payload.get("news") or payload.get("items") or payload.get("data") or []
+    elif isinstance(payload, list):
+        items = payload
+    else:
+        items = []
+
+    normalized = []
+    seen_titles = set()
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        title = str(item.get("title", "")).strip()
+        content = str(item.get("content") or item.get("summary") or item.get("desc") or "").strip()
+        if not title or title in seen_titles:
+            continue
+
+        normalized.append({
+            "title": title,
+            "content": content,
+            "source": str(item.get("source", "DeepSeek fallback")).strip() or "DeepSeek fallback",
+            "published_at": str(item.get("published_at", "")).strip(),
+            "fetched_at": fetched_at,
+            "provider": "deepseek_fallback",
+        })
+        seen_titles.add(title)
+
+    return normalized
+
+
+def fetch_news_with_llm():
+    if not env_flag("NEWS_LLM_FALLBACK_ENABLED", True):
+        print("⏭️ LLM 新闻兜底已关闭")
+        return []
+
+    if not deepseek_client.is_enabled():
+        print("⚠️ 未配置 DEEPSEEK_API_KEY，无法启用 LLM 新闻兜底")
+        return []
+
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    max_items = max(1, env_int("NEWS_LLM_FALLBACK_MAX_ITEMS", 12))
+    prompt = (
+        f"今天是 {current_date}。主新闻爬虫不可用，请整理 {max_items} 条尽可能新的中文热点新闻。"
+        "优先覆盖科技、财经、国际、中国社会、文旅娱乐和体育。"
+        "只返回 JSON，不要 Markdown，不要解释。格式为："
+        "{\"news\":[{\"title\":\"标题\",\"content\":\"80到160字摘要\",\"source\":\"来源或线索\","
+        "\"published_at\":\"可为空\"}]}"
+    )
+
+    try:
+        raw = deepseek_client.chat(
+            [
+                {
+                    "role": "system",
+                    "content": "你是严谨的新闻检索兜底服务，只输出可解析 JSON。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            max_tokens=2200,
+        )
+        news_list = normalize_llm_news_items(extract_json_payload(raw))
+        print(f"✅ LLM 兜底生成新闻: {len(news_list)}条")
+        return news_list
+    except Exception as e:
+        print("❌ LLM 新闻兜底失败:", e)
         return []
 
 def merge_news(old_news, new_news):
@@ -213,6 +331,9 @@ def train_transformer_if_needed(train_enabled, rows):
 def run_news_pipeline(train_transformer=False):
     old_news = load_old_news()
     new_news = fetch_news()
+    if not new_news:
+        print("🔁 主新闻源不可用，尝试 LLM 新闻兜底...")
+        new_news = fetch_news_with_llm()
 
     if not new_news:
         print("⚠️ 没有数据，不更新")
