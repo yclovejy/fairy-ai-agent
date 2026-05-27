@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+
+# 环境
+.env
+venv/
+env/
+.claude/
+.idea/
+
+# 数据文件（非常重要）
+data/*.json
+data/*.npy
+data/news_train_generated.jsonl
+
+# macOS
+.DS_Store
+
+# 日志
+*.log

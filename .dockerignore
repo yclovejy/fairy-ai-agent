@@ -1,0 +1,12 @@
+.git
+.idea
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+server.log
+.env
+.venv
+*.log
