@@ -98,6 +98,20 @@ python train_transformer_news.py
 - `models/news_transformer/vocab.json`
 - `models/news_transformer/config.json`
 
+`model.pt` 是运行时生成的权重文件，不需要提交到 GitHub 或 Hugging Face。服务启动时会检查
+`models/news_transformer/model.pt`、`vocab.json` 和 `config.json` 是否齐全；如果缺少权重文件，
+默认会用 `data/news_train.jsonl` 和已存在的 `data/news_train_generated.jsonl` 自动训练并生成模型。
+这样 Hugging Face Space 可以只保存源码和训练数据，启动后由 Fairy 自己补齐 Transformer 权重。
+
+可通过环境变量控制启动补模型：
+
+```env
+NEWS_BOOTSTRAP_TRAIN_ENABLED=true
+NEWS_BOOTSTRAP_FORCE_RETRAIN=false
+NEWS_BOOTSTRAP_TRAIN_EPOCHS=4
+NEWS_BOOTSTRAP_TRAIN_BATCH_SIZE=8
+```
+
 ## 启动项目
 
 如果你沿用项目原来的 conda 环境，先执行：
@@ -231,7 +245,8 @@ docker compose logs -f
 - 每 `1800` 秒，也就是每 `30` 分钟自动刷新
 - 自动更新 `data/news.json` 和 `data/news_embeddings.npy`
 - 自动生成弱监督训练集 `data/news_train_generated.jsonl`
-- 默认自动重训一次 Transformer 分类模型，下一次新闻问答会热重载新模型
+- 如果开启 `NEWS_AUTO_TRAIN_ENABLED=true`，新闻刷新后会自动重训 Transformer 分类模型，下一次新闻问答会热重载新模型
+- 如果部署时没有携带 `model.pt`，服务启动阶段会先自动训练一个 Transformer 权重文件
 - `docker compose` 会把宿主机的 `./data` 和 `./models` 挂载到容器内，避免生成文件留在容器里丢失
 
 如果你只想更新新闻，不想自动训练，可以在 `.env` 中设置：

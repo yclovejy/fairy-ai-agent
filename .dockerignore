@@ -10,3 +10,4 @@ server.log
 .env
 .venv
 *.log
+models/news_transformer/*.pt

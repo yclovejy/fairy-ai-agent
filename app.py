@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from agent_v5 import agent_answer  # V5版Agent
 from news_intelligence import NewsIntelligenceService
 from scheduler import start_background_scheduler
+from transformer_bootstrap import ensure_news_transformer_model
 from voice_service import whisper_service
 
 app = FastAPI()
@@ -20,6 +21,8 @@ news_service = NewsIntelligenceService()
 
 @app.on_event("startup")
 def startup_tasks():
+    if ensure_news_transformer_model():
+        news_service.refresh_if_needed()
     start_background_scheduler()
 
 def _parse_origin_list(raw_value: str) -> list[str]:
