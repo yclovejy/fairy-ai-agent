@@ -112,6 +112,14 @@ NEWS_BOOTSTRAP_TRAIN_EPOCHS=4
 NEWS_BOOTSTRAP_TRAIN_BATCH_SIZE=8
 ```
 
+新闻主接口不可用时，后台任务会启用 DeepSeek 兜底，生成结构化新闻并继续写入
+`data/news.json`，避免新闻数据长期停更。可通过环境变量控制：
+
+```env
+NEWS_LLM_FALLBACK_ENABLED=true
+NEWS_LLM_FALLBACK_MAX_ITEMS=12
+```
+
 ## 启动项目
 
 如果你沿用项目原来的 conda 环境，先执行：
@@ -245,6 +253,7 @@ docker compose logs -f
 - 每 `1800` 秒，也就是每 `30` 分钟自动刷新
 - 自动更新 `data/news.json` 和 `data/news_embeddings.npy`
 - 自动生成弱监督训练集 `data/news_train_generated.jsonl`
+- 主新闻源失败或返回空时，会调用 DeepSeek 兜底生成最新热点并继续保存到 `news.json`
 - 如果开启 `NEWS_AUTO_TRAIN_ENABLED=true`，新闻刷新后会自动重训 Transformer 分类模型，下一次新闻问答会热重载新模型
 - 如果部署时没有携带 `model.pt`，服务启动阶段会先自动训练一个 Transformer 权重文件
 - `docker compose` 会把宿主机的 `./data` 和 `./models` 挂载到容器内，避免生成文件留在容器里丢失

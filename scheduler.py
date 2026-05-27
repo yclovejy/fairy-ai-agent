@@ -15,6 +15,16 @@ def env_flag(name, default):
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_int(name, default):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
+
+
 def run_fetch_cycle():
     print("开始更新新闻...")
     train_enabled = env_flag("NEWS_AUTO_TRAIN_ENABLED", False)
@@ -22,7 +32,7 @@ def run_fetch_cycle():
 
 
 def scheduler_loop():
-    interval = int(os.getenv("NEWS_REFRESH_INTERVAL_SECONDS", "1800"))
+    interval = max(60, env_int("NEWS_REFRESH_INTERVAL_SECONDS", 1800))
     refresh_on_start = env_flag("NEWS_REFRESH_ON_START", True)
 
     if refresh_on_start:
