@@ -13,6 +13,7 @@ env/
 data/*.json
 data/*.npy
 data/news_train_generated.jsonl
+models/news_transformer/*.pt
 
 # macOS
 .DS_Store
