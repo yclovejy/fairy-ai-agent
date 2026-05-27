@@ -8,6 +8,7 @@ const newChatBtn = document.getElementById("new-chat-btn");
 const clearChatBtn = document.getElementById("clear-chat-btn");
 const agentEye = document.getElementById("agent-eye");
 const quickPrompts = document.getElementById("quick-prompts");
+const chatHistoryEl = document.getElementById("chat-history");
 const sidebar = document.querySelector(".sidebar");
 const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
 const sidebarOverlay = document.getElementById("sidebar-overlay");
@@ -19,8 +20,13 @@ const voiceHint = document.getElementById("voice-hint");
 const API_URL = `/chat`;
 const PING_URL = `/ping`;
 const VOICE_CHAT_URL = `/voice/chat`;
+const CONVERSATIONS_KEY = "fairyConversations";
+const ACTIVE_CONVERSATION_KEY = "fairyActiveConversationId";
+const LEGACY_CHAT_HISTORY_KEY = "chatHistory";
 
 let chatTurns = [];
+let conversations = [];
+let activeConversationId = null;
 let isLoading = false;
 let currentModel = "default";
 let recognition = null;
@@ -61,6 +67,11 @@ function init() {
     if (modelSelect) {
         modelSelect.addEventListener("change", (e) => {
             currentModel = e.target.value;
+            const conversation = getActiveConversation();
+            if (conversation) {
+                conversation.model = currentModel;
+                persistConversations();
+            }
         });
     }
 
@@ -73,6 +84,217 @@ function init() {
 function autoResize() {
     userInput.style.height = "auto";
     userInput.style.height = Math.min(userInput.scrollHeight, 200) + "px";
+}
+
+function createConversationId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+    }
+    return `fairy-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeTurns(turns) {
+    if (!Array.isArray(turns)) return [];
+    return turns
+        .filter(turn => turn && typeof turn === "object" && turn.user && turn.assistant)
+        .map(turn => ({
+            user: String(turn.user),
+            assistant: String(turn.assistant),
+        }));
+}
+
+function createConversation(firstMessage = "") {
+    const now = new Date().toISOString();
+    return {
+        id: createConversationId(),
+        title: buildConversationTitle(firstMessage),
+        turns: [],
+        createdAt: now,
+        updatedAt: now,
+        model: currentModel,
+    };
+}
+
+function normalizeConversation(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const turns = normalizeTurns(raw.turns);
+    const createdAt = raw.createdAt || raw.updatedAt || new Date().toISOString();
+    const updatedAt = raw.updatedAt || createdAt;
+    const firstUserMessage = turns[0]?.user || "";
+    return {
+        id: raw.id || createConversationId(),
+        title: raw.title || buildConversationTitle(firstUserMessage),
+        turns,
+        createdAt,
+        updatedAt,
+        model: raw.model || "default",
+    };
+}
+
+function buildConversationTitle(message) {
+    const cleaned = (message || "").replace(/\s+/g, " ").trim();
+    if (!cleaned) return "新对话";
+    return cleaned.length > 22 ? `${cleaned.slice(0, 22)}...` : cleaned;
+}
+
+function getActiveConversation() {
+    return conversations.find(conversation => conversation.id === activeConversationId) || null;
+}
+
+function ensureActiveConversation(firstMessage = "") {
+    let conversation = getActiveConversation();
+    if (conversation) return conversation;
+
+    conversation = createConversation(firstMessage);
+    activeConversationId = conversation.id;
+    conversations.unshift(conversation);
+    return conversation;
+}
+
+function persistConversations() {
+    try {
+        const visibleConversations = conversations.filter(conversation => conversation.turns.length > 0);
+        localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(visibleConversations));
+        localStorage.removeItem(LEGACY_CHAT_HISTORY_KEY);
+        if (activeConversationId) {
+            localStorage.setItem(ACTIVE_CONVERSATION_KEY, activeConversationId);
+        } else {
+            localStorage.removeItem(ACTIVE_CONVERSATION_KEY);
+        }
+    } catch (e) {
+        console.warn("无法保存对话列表:", e);
+    }
+}
+
+function saveActiveConversation(options = {}) {
+    const touch = Boolean(options.touch);
+    const conversation = getActiveConversation();
+    if (!conversation) {
+        persistConversations();
+        renderConversationHistory();
+        return;
+    }
+
+    conversation.turns = normalizeTurns(chatTurns);
+    conversation.model = currentModel;
+    if (touch) {
+        conversation.updatedAt = new Date().toISOString();
+    }
+    if (conversation.turns[0]?.user) {
+        conversation.title = buildConversationTitle(conversation.turns[0].user);
+    }
+
+    conversations = [
+        conversation,
+        ...conversations.filter(item => item.id !== conversation.id),
+    ];
+    persistConversations();
+    renderConversationHistory();
+}
+
+function sameCalendarDay(a, b) {
+    return a.getFullYear() === b.getFullYear()
+        && a.getMonth() === b.getMonth()
+        && a.getDate() === b.getDate();
+}
+
+function getConversationGroupLabel(dateValue) {
+    const date = new Date(dateValue);
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+
+    if (sameCalendarDay(date, now)) return "今天";
+    if (sameCalendarDay(date, yesterday)) return "昨天";
+    return "更早";
+}
+
+function renderConversationHistory() {
+    if (!chatHistoryEl) return;
+
+    chatHistoryEl.innerHTML = "";
+    const savedConversations = conversations
+        .filter(conversation => conversation.turns.length > 0)
+        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+    if (!savedConversations.length) {
+        const empty = document.createElement("div");
+        empty.className = "history-empty";
+        empty.textContent = "暂无历史对话";
+        chatHistoryEl.appendChild(empty);
+        return;
+    }
+
+    const groups = new Map();
+    savedConversations.forEach(conversation => {
+        const label = getConversationGroupLabel(conversation.updatedAt);
+        if (!groups.has(label)) groups.set(label, []);
+        groups.get(label).push(conversation);
+    });
+
+    ["今天", "昨天", "更早"].forEach(label => {
+        const group = groups.get(label);
+        if (!group || !group.length) return;
+
+        const section = document.createElement("section");
+        section.className = "history-group";
+
+        const heading = document.createElement("p");
+        heading.className = "history-label";
+        heading.textContent = label;
+        section.appendChild(heading);
+
+        group.forEach(conversation => {
+            const item = document.createElement("button");
+            item.className = "history-item";
+            item.type = "button";
+            item.dataset.conversationId = conversation.id;
+            item.classList.toggle("active", conversation.id === activeConversationId);
+            item.innerHTML = `
+                <span>${escapeHtml(conversation.title)}</span>
+                <small>${conversation.turns.length}轮</small>
+            `;
+            item.addEventListener("click", () => loadConversation(conversation.id));
+            section.appendChild(item);
+        });
+
+        chatHistoryEl.appendChild(section);
+    });
+}
+
+function renderCurrentConversation() {
+    const messages = chatMessages.querySelectorAll(".message");
+    messages.forEach(msg => msg.remove());
+
+    if (welcomeScreen) {
+        welcomeScreen.style.display = chatTurns.length > 0 ? "none" : "flex";
+    }
+
+    chatTurns.forEach(turn => {
+        addMessage("user", turn.user);
+        addMessage("agent", turn.assistant, { ttsText: turn.assistant });
+    });
+
+    updateChatSurfaceState();
+    scrollToBottom();
+}
+
+function loadConversation(conversationId) {
+    if (isLoading) return;
+
+    const conversation = conversations.find(item => item.id === conversationId);
+    if (!conversation) return;
+
+    closeSidebar();
+    activeConversationId = conversation.id;
+    currentModel = conversation.model || currentModel;
+    if (modelSelect) {
+        modelSelect.value = currentModel;
+    }
+    chatTurns = normalizeTurns(conversation.turns);
+    persistConversations();
+    renderConversationHistory();
+    renderCurrentConversation();
 }
 
 async function checkBackendStatus() {
@@ -150,13 +372,14 @@ async function submitMessage(message) {
         
         const answer = data.answer || "抱歉，我无法回答这个问题。";
         addMessage("agent", answer, { ttsText: answer });
+        const conversation = ensureActiveConversation(message);
+        chatTurns = conversation.turns;
         chatTurns.push({ user: message, assistant: answer });
-
-        saveChatHistory();
         
         if (chatTurns.length > 25) {
             chatTurns = chatTurns.slice(-25);
         }
+        saveActiveConversation({ touch: true });
 
     } catch (error) {
         if (loadingMessage) loadingMessage.remove();
@@ -210,8 +433,13 @@ async function sendVoiceMessage(transcript) {
 
         const answer = data.answer || "抱歉，我暂时没能处理这段语音。";
         addMessage("agent", answer, { ttsText: data.tts_text || answer });
+        const conversation = ensureActiveConversation(data.transcript || transcript);
+        chatTurns = conversation.turns;
         chatTurns.push({ user: data.transcript || transcript, assistant: answer });
-        saveChatHistory();
+        if (chatTurns.length > 25) {
+            chatTurns = chatTurns.slice(-25);
+        }
+        saveActiveConversation({ touch: true });
     } catch (error) {
         if (loadingMessage) loadingMessage.remove();
         addMessage("error", error.message || "语音请求失败，请稍后重试");
@@ -404,15 +632,14 @@ function updateSendButton() {
 }
 
 function newChat() {
-    if (chatTurns.length > 0) {
-        if (!confirm("开始新对话将清空当前对话记录，是否继续？")) {
-            return;
-        }
-    }
+    if (isLoading) return;
 
     closeSidebar();
+    saveActiveConversation();
+    activeConversationId = null;
     chatTurns = [];
-    localStorage.removeItem("chatHistory");
+    persistConversations();
+    renderConversationHistory();
     setAgentThinking(false);
     
     const messages = chatMessages.querySelectorAll(".message");
@@ -425,11 +652,17 @@ function newChat() {
 }
 
 function clearChat() {
-    if (!confirm("确定要清空所有对话记录吗？")) return;
+    if (isLoading) return;
+    if (!confirm("确定要删除当前对话吗？")) return;
 
     closeSidebar();
+    if (activeConversationId) {
+        conversations = conversations.filter(conversation => conversation.id !== activeConversationId);
+    }
+    activeConversationId = null;
     chatTurns = [];
-    localStorage.removeItem("chatHistory");
+    persistConversations();
+    renderConversationHistory();
     setAgentThinking(false);
     
     const messages = chatMessages.querySelectorAll(".message");
@@ -442,34 +675,54 @@ function clearChat() {
 }
 
 function saveChatHistory() {
-    try {
-        localStorage.setItem("chatHistory", JSON.stringify(chatTurns));
-    } catch (e) {
-        console.warn("无法保存对话历史:", e);
-    }
+    saveActiveConversation();
 }
 
 function loadChatHistory() {
     try {
-        const saved = localStorage.getItem("chatHistory");
-        if (saved) {
-            chatTurns = JSON.parse(saved);
-            
-            if (chatTurns.length > 0 && welcomeScreen) {
-                welcomeScreen.style.display = "none";
+        const saved = localStorage.getItem(CONVERSATIONS_KEY);
+        const parsed = saved ? JSON.parse(saved) : [];
+        conversations = Array.isArray(parsed)
+            ? parsed.map(normalizeConversation).filter(Boolean)
+            : [];
+
+        const legacy = localStorage.getItem(LEGACY_CHAT_HISTORY_KEY);
+        if (!conversations.length && legacy) {
+            const legacyTurns = normalizeTurns(JSON.parse(legacy));
+            if (legacyTurns.length) {
+                const migrated = createConversation(legacyTurns[0].user);
+                migrated.turns = legacyTurns;
+                migrated.createdAt = new Date().toISOString();
+                migrated.updatedAt = migrated.createdAt;
+                conversations = [migrated];
+                activeConversationId = migrated.id;
             }
-            
-            chatTurns.forEach(t => {
-                if (t && typeof t === "object") {
-                    if (t.user) addMessage("user", t.user);
-                    if (t.assistant) addMessage("agent", t.assistant, { ttsText: t.assistant });
-                }
-            });
+        } else {
+            activeConversationId = localStorage.getItem(ACTIVE_CONVERSATION_KEY);
+        }
+
+        if (!conversations.some(conversation => conversation.id === activeConversationId)) {
+            activeConversationId = conversations[0]?.id || null;
+        }
+
+        const activeConversation = getActiveConversation();
+        chatTurns = activeConversation ? normalizeTurns(activeConversation.turns) : [];
+        if (activeConversation?.model) {
+            currentModel = activeConversation.model;
+            if (modelSelect) {
+                modelSelect.value = currentModel;
+            }
         }
     } catch (e) {
-        console.warn("无法加载对话历史:", e);
+        console.warn("无法加载对话列表:", e);
+        conversations = [];
+        activeConversationId = null;
+        chatTurns = [];
     }
-    updateChatSurfaceState();
+
+    persistConversations();
+    renderConversationHistory();
+    renderCurrentConversation();
 }
 
 function initVoiceRecognition() {

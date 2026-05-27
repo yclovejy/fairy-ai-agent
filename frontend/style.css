@@ -250,8 +250,14 @@ body.sidebar-open {
 .chat-history {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 12px;
     margin-bottom: 12px;
+}
+
+.history-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
 .history-item {
@@ -270,15 +276,26 @@ body.sidebar-open {
     white-space: nowrap;
 }
 
-.history-item svg {
-    width: 18px;
-    height: 18px;
-    color: var(--blue);
+.history-item small {
+    flex: 0 0 auto;
+    color: #9aa6c2;
+    font-size: 12px;
+    font-weight: 650;
 }
 
 .history-item.active {
     color: var(--text);
     background: rgba(39, 104, 246, 0.08);
+}
+
+.history-item.active small {
+    color: var(--blue);
+}
+
+.history-empty {
+    padding: 14px 10px;
+    color: #96a1bd;
+    font-size: 14px;
 }
 
 .show-all-btn {
