@@ -5,7 +5,16 @@ const chatMessages = document.getElementById("chat-messages");
 const welcomeScreen = document.getElementById("welcome-screen");
 const statusBadge = document.getElementById("status-badge");
 const newChatBtn = document.getElementById("new-chat-btn");
-const clearChatBtn = document.getElementById("clear-chat-btn");
+const settingsBtn = document.getElementById("settings-btn");
+const settingsPanel = document.getElementById("settings-panel");
+const settingsOverlay = document.getElementById("settings-overlay");
+const settingsCloseBtn = document.getElementById("settings-close-btn");
+const deleteConversationBtn = document.getElementById("delete-conversation-btn");
+const notificationsToggle = document.getElementById("notifications-toggle");
+const webSearchToggle = document.getElementById("web-search-toggle");
+const autoSpeakToggle = document.getElementById("auto-speak-toggle");
+const contextLimitSelect = document.getElementById("context-limit-select");
+const responseStyleSelect = document.getElementById("response-style-select");
 const agentEye = document.getElementById("agent-eye");
 const quickPrompts = document.getElementById("quick-prompts");
 const chatHistoryEl = document.getElementById("chat-history");
@@ -16,6 +25,7 @@ const suggestionCards = document.querySelectorAll(".suggestion-card");
 const modelSelect = document.getElementById("model-select");
 const voiceBtn = document.getElementById("voice-btn");
 const voiceHint = document.getElementById("voice-hint");
+const searchToggle = document.querySelector(".search-toggle");
 
 const API_URL = `/chat`;
 const PING_URL = `/ping`;
@@ -23,10 +33,21 @@ const VOICE_CHAT_URL = `/voice/chat`;
 const CONVERSATIONS_KEY = "fairyConversations";
 const ACTIVE_CONVERSATION_KEY = "fairyActiveConversationId";
 const LEGACY_CHAT_HISTORY_KEY = "chatHistory";
+const SETTINGS_KEY = "fairySettings";
+const DEFAULT_SETTINGS = {
+    theme: "blue",
+    fontSize: "medium",
+    notifications: false,
+    webSearchDefault: true,
+    autoSpeak: false,
+    contextLimit: 25,
+    responseStyle: "balanced",
+};
 
 let chatTurns = [];
 let conversations = [];
 let activeConversationId = null;
+let appSettings = { ...DEFAULT_SETTINGS };
 let isLoading = false;
 let currentModel = "default";
 let recognition = null;
@@ -34,6 +55,7 @@ let isRecording = false;
 let speechSynthesisEnabled = "speechSynthesis" in window;
 
 function init() {
+    loadSettings();
     checkBackendStatus();
 
     if (chatForm) {
@@ -55,7 +77,6 @@ function init() {
     userInput.addEventListener("input", autoResize);
     
     newChatBtn.addEventListener("click", newChat);
-    clearChatBtn.addEventListener("click", clearChat);
     
     suggestionCards.forEach(card => {
         card.addEventListener("click", () => {
@@ -76,6 +97,7 @@ function init() {
     }
 
     initSidebar();
+    initSettingsPanel();
     initVoiceRecognition();
 
     loadChatHistory();
@@ -84,6 +106,173 @@ function init() {
 function autoResize() {
     userInput.style.height = "auto";
     userInput.style.height = Math.min(userInput.scrollHeight, 200) + "px";
+}
+
+function loadSettings() {
+    try {
+        const saved = localStorage.getItem(SETTINGS_KEY);
+        const parsed = saved ? JSON.parse(saved) : {};
+        appSettings = {
+            ...DEFAULT_SETTINGS,
+            ...parsed,
+            contextLimit: Number(parsed.contextLimit || DEFAULT_SETTINGS.contextLimit),
+        };
+    } catch (e) {
+        console.warn("无法加载设置:", e);
+        appSettings = { ...DEFAULT_SETTINGS };
+    }
+
+    applySettings();
+    syncSettingsControls();
+}
+
+function persistSettings() {
+    try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(appSettings));
+    } catch (e) {
+        console.warn("无法保存设置:", e);
+    }
+}
+
+function updateSetting(key, value) {
+    appSettings = { ...appSettings, [key]: value };
+    persistSettings();
+    applySettings();
+    syncSettingsControls();
+}
+
+function applySettings() {
+    document.body.dataset.theme = appSettings.theme;
+    document.body.dataset.fontSize = appSettings.fontSize;
+    if (searchToggle) {
+        searchToggle.classList.toggle("active", Boolean(appSettings.webSearchDefault));
+    }
+}
+
+function syncSettingsControls() {
+    document.querySelectorAll(".theme-swatch").forEach(button => {
+        button.classList.toggle("active", button.dataset.theme === appSettings.theme);
+        button.setAttribute("aria-pressed", String(button.dataset.theme === appSettings.theme));
+    });
+
+    document.querySelectorAll("[data-font-size]").forEach(button => {
+        button.classList.toggle("active", button.dataset.fontSize === appSettings.fontSize);
+        button.setAttribute("aria-pressed", String(button.dataset.fontSize === appSettings.fontSize));
+    });
+
+    syncSwitch(notificationsToggle, appSettings.notifications);
+    syncSwitch(webSearchToggle, appSettings.webSearchDefault);
+    syncSwitch(autoSpeakToggle, appSettings.autoSpeak);
+    if (contextLimitSelect) contextLimitSelect.value = String(appSettings.contextLimit);
+    if (responseStyleSelect) responseStyleSelect.value = appSettings.responseStyle;
+}
+
+function syncSwitch(control, active) {
+    if (!control) return;
+    control.classList.toggle("active", Boolean(active));
+    control.setAttribute("aria-checked", String(Boolean(active)));
+}
+
+function getContextLimit() {
+    const limit = Number(appSettings.contextLimit);
+    if (!Number.isFinite(limit) || limit <= 0) return DEFAULT_SETTINGS.contextLimit;
+    return limit;
+}
+
+function getRequestHistory() {
+    return chatTurns.slice(-getContextLimit());
+}
+
+function trimChatTurnsForStorage() {
+    const maxTurns = Math.max(getContextLimit(), 25);
+    if (chatTurns.length > maxTurns) {
+        chatTurns = chatTurns.slice(-maxTurns);
+    }
+}
+
+function notifyAnswerComplete(answer) {
+    if (!appSettings.notifications || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    if (document.visibilityState === "visible") return;
+
+    const body = (answer || "").replace(/\s+/g, " ").trim().slice(0, 110);
+    new Notification("Fairy 已完成回答", { body });
+}
+
+function openSettings() {
+    if (!settingsPanel || !settingsOverlay) return;
+    settingsPanel.classList.add("open");
+    settingsPanel.setAttribute("aria-hidden", "false");
+    settingsOverlay.classList.add("open");
+    document.body.classList.add("settings-open");
+}
+
+function closeSettings() {
+    if (!settingsPanel || !settingsOverlay) return;
+    settingsPanel.classList.remove("open");
+    settingsPanel.setAttribute("aria-hidden", "true");
+    settingsOverlay.classList.remove("open");
+    document.body.classList.remove("settings-open");
+}
+
+function initSettingsPanel() {
+    if (!settingsBtn || !settingsPanel) return;
+
+    settingsBtn.addEventListener("click", openSettings);
+    settingsOverlay?.addEventListener("click", closeSettings);
+    settingsCloseBtn?.addEventListener("click", closeSettings);
+    deleteConversationBtn?.addEventListener("click", clearChat);
+
+    document.querySelectorAll(".theme-swatch").forEach(button => {
+        button.addEventListener("click", () => updateSetting("theme", button.dataset.theme || "blue"));
+    });
+
+    document.querySelectorAll("[data-font-size]").forEach(button => {
+        button.addEventListener("click", () => updateSetting("fontSize", button.dataset.fontSize || "medium"));
+    });
+
+    notificationsToggle?.addEventListener("click", async () => {
+        let enabled = !appSettings.notifications;
+        if (enabled && !("Notification" in window)) {
+            enabled = false;
+            setVoiceHint("当前浏览器不支持通知，可继续使用页面内提示。");
+        }
+        if (enabled && "Notification" in window && Notification.permission === "default") {
+            const permission = await Notification.requestPermission();
+            enabled = permission === "granted";
+        }
+        if (enabled && "Notification" in window && Notification.permission === "denied") {
+            enabled = false;
+            setVoiceHint("浏览器通知权限未开启，可在浏览器设置中允许通知。");
+        }
+        updateSetting("notifications", enabled);
+    });
+
+    webSearchToggle?.addEventListener("click", () => {
+        updateSetting("webSearchDefault", !appSettings.webSearchDefault);
+    });
+
+    searchToggle?.addEventListener("click", () => {
+        updateSetting("webSearchDefault", !appSettings.webSearchDefault);
+    });
+
+    autoSpeakToggle?.addEventListener("click", () => {
+        updateSetting("autoSpeak", !appSettings.autoSpeak);
+    });
+
+    contextLimitSelect?.addEventListener("change", event => {
+        updateSetting("contextLimit", Number(event.target.value));
+    });
+
+    responseStyleSelect?.addEventListener("change", event => {
+        updateSetting("responseStyle", event.target.value);
+    });
+
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape") {
+            closeSettings();
+        }
+    });
 }
 
 function createConversationId() {
@@ -357,8 +546,12 @@ async function submitMessage(message) {
             },
             body: JSON.stringify({
                 query: message,
-                history: chatTurns,
-                model: currentModel
+                history: getRequestHistory(),
+                model: currentModel,
+                preferences: {
+                    responseStyle: appSettings.responseStyle,
+                    webSearch: appSettings.webSearchDefault,
+                }
             })
         });
 
@@ -372,13 +565,15 @@ async function submitMessage(message) {
         
         const answer = data.answer || "抱歉，我无法回答这个问题。";
         addMessage("agent", answer, { ttsText: answer });
+        if (appSettings.autoSpeak) {
+            speakText(answer);
+        }
+        notifyAnswerComplete(answer);
         const conversation = ensureActiveConversation(message);
         chatTurns = conversation.turns;
         chatTurns.push({ user: message, assistant: answer });
-        
-        if (chatTurns.length > 25) {
-            chatTurns = chatTurns.slice(-25);
-        }
+
+        trimChatTurnsForStorage();
         saveActiveConversation({ touch: true });
 
     } catch (error) {
@@ -415,7 +610,7 @@ async function sendVoiceMessage(transcript) {
     try {
         const formData = new FormData();
         formData.append("transcript", transcript);
-        formData.append("history", JSON.stringify(chatTurns));
+        formData.append("history", JSON.stringify(getRequestHistory()));
 
         const response = await fetch(VOICE_CHAT_URL, {
             method: "POST",
@@ -433,12 +628,14 @@ async function sendVoiceMessage(transcript) {
 
         const answer = data.answer || "抱歉，我暂时没能处理这段语音。";
         addMessage("agent", answer, { ttsText: data.tts_text || answer });
+        if (appSettings.autoSpeak) {
+            speakText(data.tts_text || answer);
+        }
+        notifyAnswerComplete(answer);
         const conversation = ensureActiveConversation(data.transcript || transcript);
         chatTurns = conversation.turns;
         chatTurns.push({ user: data.transcript || transcript, assistant: answer });
-        if (chatTurns.length > 25) {
-            chatTurns = chatTurns.slice(-25);
-        }
+        trimChatTurnsForStorage();
         saveActiveConversation({ touch: true });
     } catch (error) {
         if (loadingMessage) loadingMessage.remove();

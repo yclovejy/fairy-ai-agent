@@ -117,9 +117,10 @@
                         </svg>
                     </button>
                     <button class="icon-btn text-btn" id="share-btn" type="button">分享</button>
-                    <button class="icon-btn" id="clear-chat-btn" type="button" title="清空对话" aria-label="清空对话">
+                    <button class="icon-btn" id="settings-btn" type="button" title="设置" aria-label="设置">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M12 6h.01M12 12h.01M12 18h.01"></path>
+                            <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5z"></path>
+                            <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.1 2.1 0 0 1-2.97 2.97l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.09 1.65V21.3a2.1 2.1 0 0 1-4.2 0v-.06a1.8 1.8 0 0 0-1.09-1.65 1.8 1.8 0 0 0-1.98.36l-.04.04a2.1 2.1 0 1 1-2.97-2.97l.04-.04A1.8 1.8 0 0 0 3.85 15a1.8 1.8 0 0 0-1.65-1.09H2.1a2.1 2.1 0 0 1 0-4.2h.1a1.8 1.8 0 0 0 1.65-1.09 1.8 1.8 0 0 0-.36-1.98l-.04-.04a2.1 2.1 0 1 1 2.97-2.97l.04.04a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 9.53 2.4V2.1a2.1 2.1 0 0 1 4.2 0v.3a1.8 1.8 0 0 0 1.09 1.65 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.1 2.1 0 0 1 2.97 2.97l-.04.04a1.8 1.8 0 0 0-.36 1.98 1.8 1.8 0 0 0 1.65 1.09h.14a2.1 2.1 0 0 1 0 4.2h-.14A1.8 1.8 0 0 0 19.4 15z"></path>
                         </svg>
                     </button>
                 </div>
@@ -197,6 +198,111 @@
                 <p class="voice-hint" id="voice-hint">AI 生成内容仅供参考，请核实重要信息</p>
             </form>
         </main>
+
+        <button class="settings-overlay" id="settings-overlay" type="button" aria-label="关闭设置"></button>
+        <aside class="settings-panel" id="settings-panel" aria-label="设置" aria-hidden="true">
+            <div class="settings-header">
+                <div>
+                    <p>Fairy 设置</p>
+                    <h2>个性化与智能偏好</h2>
+                </div>
+                <button class="settings-close-btn" id="settings-close-btn" type="button" aria-label="关闭设置">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M18 6 6 18M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="settings-body">
+                <section class="settings-section">
+                    <h3>外观</h3>
+                    <div class="setting-row vertical">
+                        <div>
+                            <strong>主题颜色</strong>
+                            <span>选择 Fairy 的主色调</span>
+                        </div>
+                        <div class="theme-swatches" aria-label="主题颜色">
+                            <button class="theme-swatch blue" type="button" data-theme="blue" aria-label="蓝色主题"></button>
+                            <button class="theme-swatch violet" type="button" data-theme="violet" aria-label="紫色主题"></button>
+                            <button class="theme-swatch green" type="button" data-theme="green" aria-label="绿色主题"></button>
+                            <button class="theme-swatch ink" type="button" data-theme="ink" aria-label="深蓝主题"></button>
+                        </div>
+                    </div>
+
+                    <div class="setting-row vertical">
+                        <div>
+                            <strong>字体大小</strong>
+                            <span>影响消息、输入框和设置面板</span>
+                        </div>
+                        <div class="segmented-control" data-setting-group="fontSize">
+                            <button type="button" data-font-size="small">小</button>
+                            <button type="button" data-font-size="medium">标准</button>
+                            <button type="button" data-font-size="large">大</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="settings-section">
+                    <h3>通知</h3>
+                    <label class="setting-row">
+                        <div>
+                            <strong>回答完成提醒</strong>
+                            <span>Fairy 完成回答时发送浏览器通知</span>
+                        </div>
+                        <button class="switch-btn" id="notifications-toggle" type="button" role="switch" aria-checked="false"></button>
+                    </label>
+                </section>
+
+                <section class="settings-section">
+                    <h3>AI 应用偏好</h3>
+                    <label class="setting-row">
+                        <div>
+                            <strong>默认联网搜索</strong>
+                            <span>新对话默认点亮联网搜索模式</span>
+                        </div>
+                        <button class="switch-btn" id="web-search-toggle" type="button" role="switch" aria-checked="true"></button>
+                    </label>
+
+                    <label class="setting-row">
+                        <div>
+                            <strong>自动朗读回答</strong>
+                            <span>Fairy 回复后自动播报内容</span>
+                        </div>
+                        <button class="switch-btn" id="auto-speak-toggle" type="button" role="switch" aria-checked="false"></button>
+                    </label>
+
+                    <label class="setting-row vertical">
+                        <div>
+                            <strong>上下文记忆长度</strong>
+                            <span>控制每次请求携带最近多少轮对话</span>
+                        </div>
+                        <select class="settings-select" id="context-limit-select">
+                            <option value="10">最近 10 轮</option>
+                            <option value="25">最近 25 轮</option>
+                            <option value="50">最近 50 轮</option>
+                        </select>
+                    </label>
+
+                    <label class="setting-row vertical">
+                        <div>
+                            <strong>回答风格</strong>
+                            <span>为后续智能体能力预留的偏好</span>
+                        </div>
+                        <select class="settings-select" id="response-style-select">
+                            <option value="balanced">均衡</option>
+                            <option value="concise">简洁</option>
+                            <option value="detailed">详细</option>
+                            <option value="creative">创意</option>
+                        </select>
+                    </label>
+                </section>
+
+                <section class="settings-section danger-zone">
+                    <h3>对话管理</h3>
+                    <button class="danger-btn" id="delete-conversation-btn" type="button">删除当前对话</button>
+                </section>
+            </div>
+        </aside>
     </div>
 
     <script src="/static/script.js"></script>
