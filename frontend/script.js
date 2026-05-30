@@ -27,7 +27,10 @@ const modelSelect = document.getElementById("model-select");
 const voiceBtn = document.getElementById("voice-btn");
 const voiceHint = document.getElementById("voice-hint");
 const searchToggle = document.querySelector(".search-toggle");
+const inputArea = document.getElementById("chat-form");
+const composerToggle = document.getElementById("composer-toggle");
 const sidebarMediaQuery = window.matchMedia("(max-width: 768px)");
+const systemAppearanceQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 const API_URL = `/chat`;
 const PING_URL = `/ping`;
@@ -38,6 +41,7 @@ const LEGACY_CHAT_HISTORY_KEY = "chatHistory";
 const SETTINGS_KEY = "fairySettings";
 const DEFAULT_SETTINGS = {
     theme: "blue",
+    appearance: "system",
     fontSize: "medium",
     notifications: false,
     webSearchDefault: true,
@@ -55,6 +59,9 @@ let currentModel = "default";
 let recognition = null;
 let isRecording = false;
 let speechSynthesisEnabled = "speechSynthesis" in window;
+let composerPinned = false;
+let composerHovered = false;
+let composerFocused = false;
 
 function init() {
     loadSettings();
@@ -100,9 +107,11 @@ function init() {
 
     initSidebar();
     initSettingsPanel();
+    initComposerReveal();
     initVoiceRecognition();
 
     loadChatHistory();
+    updateComposerState();
 }
 
 function autoResize() {
@@ -145,16 +154,29 @@ function updateSetting(key, value) {
 
 function applySettings() {
     document.body.dataset.theme = appSettings.theme;
+    document.body.dataset.appearanceMode = appSettings.appearance;
+    document.body.dataset.appearance = resolveAppearance();
     document.body.dataset.fontSize = appSettings.fontSize;
     if (searchToggle) {
         searchToggle.classList.toggle("active", Boolean(appSettings.webSearchDefault));
     }
 }
 
+function resolveAppearance() {
+    if (appSettings.appearance === "dark") return "dark";
+    if (appSettings.appearance === "light") return "light";
+    return systemAppearanceQuery.matches ? "dark" : "light";
+}
+
 function syncSettingsControls() {
     document.querySelectorAll(".theme-swatch").forEach(button => {
         button.classList.toggle("active", button.dataset.theme === appSettings.theme);
         button.setAttribute("aria-pressed", String(button.dataset.theme === appSettings.theme));
+    });
+
+    document.querySelectorAll("[data-appearance-mode]").forEach(button => {
+        button.classList.toggle("active", button.dataset.appearanceMode === appSettings.appearance);
+        button.setAttribute("aria-pressed", String(button.dataset.appearanceMode === appSettings.appearance));
     });
 
     document.querySelectorAll("[data-font-size]").forEach(button => {
@@ -229,6 +251,10 @@ function initSettingsPanel() {
         button.addEventListener("click", () => updateSetting("theme", button.dataset.theme || "blue"));
     });
 
+    document.querySelectorAll("[data-appearance-mode]").forEach(button => {
+        button.addEventListener("click", () => updateSetting("appearance", button.dataset.appearanceMode || "system"));
+    });
+
     document.querySelectorAll("[data-font-size]").forEach(button => {
         button.addEventListener("click", () => updateSetting("fontSize", button.dataset.fontSize || "medium"));
     });
@@ -275,6 +301,14 @@ function initSettingsPanel() {
             closeSettings();
         }
     });
+
+    if (typeof systemAppearanceQuery.addEventListener === "function") {
+        systemAppearanceQuery.addEventListener("change", () => {
+            if (appSettings.appearance === "system") {
+                applySettings();
+            }
+        });
+    }
 }
 
 function createConversationId() {
@@ -467,6 +501,7 @@ function renderCurrentConversation() {
     });
 
     updateChatSurfaceState();
+    updateComposerState();
     scrollToBottom();
 }
 
@@ -486,6 +521,8 @@ function loadConversation(conversationId) {
     persistConversations();
     renderConversationHistory();
     renderCurrentConversation();
+    composerPinned = true;
+    updateComposerState();
 }
 
 async function checkBackendStatus() {
@@ -525,6 +562,8 @@ async function submitMessage(message) {
     if (isLoading) return;
 
     closeSidebar();
+    composerPinned = true;
+    updateComposerState();
     userInput.value = "";
     autoResize();
     
@@ -537,6 +576,7 @@ async function submitMessage(message) {
     isLoading = true;
     setAgentThinking(true);
     updateSendButton();
+    updateComposerState();
     
     const loadingMessage = addLoadingMessage();
     
@@ -591,6 +631,7 @@ async function submitMessage(message) {
         isLoading = false;
         setAgentThinking(false);
         updateSendButton();
+        updateComposerState();
     }
 }
 
@@ -598,6 +639,8 @@ async function sendVoiceMessage(transcript) {
     if (isLoading || !transcript) return;
 
     closeSidebar();
+    composerPinned = true;
+    updateComposerState();
     if (welcomeScreen) {
         welcomeScreen.style.display = "none";
     }
@@ -606,6 +649,7 @@ async function sendVoiceMessage(transcript) {
     isLoading = true;
     setAgentThinking(true);
     updateSendButton();
+    updateComposerState();
 
     const loadingMessage = addLoadingMessage();
 
@@ -646,6 +690,7 @@ async function sendVoiceMessage(transcript) {
         isLoading = false;
         setAgentThinking(false);
         updateSendButton();
+        updateComposerState();
         setVoiceHint("AI生成内容仅供参考，请核实重要信息");
         setVoiceRecording(false);
     }
@@ -761,6 +806,75 @@ function updateChatSurfaceState() {
     if (quickPrompts) {
         quickPrompts.hidden = !hasMessages;
     }
+    updateComposerState();
+}
+
+function hasConversationOnScreen() {
+    return chatTurns.length > 0 || chatMessages.querySelectorAll(".message").length > 0 || isLoading;
+}
+
+function shouldShowComposer() {
+    return hasConversationOnScreen() || composerPinned || composerHovered || composerFocused;
+}
+
+function updateComposerState() {
+    const locked = hasConversationOnScreen();
+    const visible = shouldShowComposer();
+    document.body.classList.toggle("composer-locked", locked);
+    document.body.classList.toggle("input-visible", visible);
+    document.body.classList.toggle("input-hidden", !visible);
+    if (composerToggle) {
+        composerToggle.setAttribute("aria-pressed", String(visible));
+        composerToggle.setAttribute("aria-label", visible ? "隐藏输入框" : "显示输入框");
+        composerToggle.title = visible ? "隐藏输入框" : "显示输入框";
+    }
+}
+
+function initComposerReveal() {
+    updateComposerState();
+
+    inputArea?.addEventListener("mouseenter", () => {
+        composerHovered = true;
+        updateComposerState();
+    });
+
+    inputArea?.addEventListener("mouseleave", () => {
+        composerHovered = false;
+        if (!composerFocused && !hasConversationOnScreen()) {
+            composerPinned = false;
+        }
+        updateComposerState();
+    });
+
+    userInput?.addEventListener("focus", () => {
+        composerFocused = true;
+        composerPinned = true;
+        updateComposerState();
+    });
+
+    userInput?.addEventListener("blur", () => {
+        composerFocused = false;
+        if (!hasConversationOnScreen()) {
+            composerPinned = false;
+        }
+        updateComposerState();
+    });
+
+    composerToggle?.addEventListener("click", () => {
+        if (hasConversationOnScreen()) {
+            userInput?.focus();
+            updateComposerState();
+            return;
+        }
+        composerPinned = !shouldShowComposer();
+        composerHovered = composerPinned;
+        updateComposerState();
+        if (composerPinned) {
+            window.setTimeout(() => userInput?.focus(), 120);
+        } else {
+            userInput?.blur();
+        }
+    });
 }
 
 function formatContent(text) {
@@ -799,6 +913,10 @@ function scrollToBottom() {
 
 function initSidebar() {
     if (!sidebar || !sidebarOverlay) return;
+
+    document.body.classList.add("sidebar-collapsed");
+    sidebar.classList.remove("open");
+    document.body.classList.remove("sidebar-open");
 
     [sidebarToggleBtn, sidebarBrandToggleBtn].filter(Boolean).forEach(button => {
         button.addEventListener("click", toggleSidebar);
@@ -878,6 +996,9 @@ function newChat() {
     saveActiveConversation();
     activeConversationId = null;
     chatTurns = [];
+    composerPinned = false;
+    composerHovered = false;
+    composerFocused = false;
     persistConversations();
     renderConversationHistory();
     setAgentThinking(false);
@@ -901,6 +1022,9 @@ function clearChat() {
     }
     activeConversationId = null;
     chatTurns = [];
+    composerPinned = false;
+    composerHovered = false;
+    composerFocused = false;
     persistConversations();
     renderConversationHistory();
     setAgentThinking(false);
@@ -935,15 +1059,12 @@ function loadChatHistory() {
                 migrated.createdAt = new Date().toISOString();
                 migrated.updatedAt = migrated.createdAt;
                 conversations = [migrated];
-                activeConversationId = migrated.id;
             }
         } else {
-            activeConversationId = localStorage.getItem(ACTIVE_CONVERSATION_KEY);
+            activeConversationId = null;
         }
 
-        if (!conversations.some(conversation => conversation.id === activeConversationId)) {
-            activeConversationId = conversations[0]?.id || null;
-        }
+        activeConversationId = null;
 
         const activeConversation = getActiveConversation();
         chatTurns = activeConversation ? normalizeTurns(activeConversation.turns) : [];

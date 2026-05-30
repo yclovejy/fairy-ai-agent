@@ -11,3 +11,8 @@ server.log
 .venv
 *.log
 models/news_transformer/*.pt
+data/news.json
+data/news_embeddings.npy
+data/news_vector_store.npz
+data/news_vector_store_meta.json
+data/news_train_generated.jsonl

@@ -316,6 +316,11 @@ class NewsIntelligenceService:
             self.analyze_article(item.get("title", ""), item.get("content", ""))
             for item in selected
         ]
+        for insight, item in zip(insights, selected):
+            insight.score_detail["source"] = item.get("source") or item.get("provider") or "未知来源"
+            insight.score_detail["provider"] = item.get("provider") or ""
+            insight.score_detail["source_domain"] = item.get("source_domain") or ""
+            insight.score_detail["source_credibility_score"] = item.get("source_credibility_score", 0.5)
 
         sentiment_counter = Counter(item.sentiment for item in insights)
         category_counter = Counter(item.category for item in insights)
@@ -353,6 +358,8 @@ def format_analysis_block(analysis: dict[str, Any]) -> str:
         lines.append(
             f"{index}. {insight['title']}\n"
             f"   类别：{insight['category']} | 情感：{insight['sentiment']}\n"
+            f"   来源：{insight.get('score_detail', {}).get('source', '未知来源')} | "
+            f"可信度：{float(insight.get('score_detail', {}).get('source_credibility_score', 0.5)):.2f}\n"
             f"   摘要：{insight['summary']}"
         )
 

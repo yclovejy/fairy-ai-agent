@@ -56,7 +56,7 @@ def ensure_news_transformer_model() -> bool:
 
     command = [
         sys.executable,
-        "train_transformer_news.py",
+        str(BASE_DIR / "scripts" / "train_transformer_news.py"),
         "--epochs",
         epochs,
         "--batch-size",

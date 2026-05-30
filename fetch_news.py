@@ -1,14 +1,20 @@
 import json
+import html
 import os
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
+from urllib.parse import urljoin, urlparse
 
 import numpy as np
 import requests
 
 from deepseek_client import deepseek_client
+from news_retrieval import save_vector_store, weighted_news_text
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -16,11 +22,53 @@ except Exception:
     SentenceTransformer = None
 
 # ========= 配置 =========
-NEWS_API = "http://api.xcvts.cn/api/hotlist/qq_news?type=new"
+NEWS_API = os.getenv(
+    "NEWS_TENCENT_HOT_API_URL",
+    "https://i.news.qq.com/web_feed/get_command_pagination?page=1",
+)
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_PATH = os.path.join(_BASE_DIR, "data", "news.json")
 EMBED_PATH = os.path.join(_BASE_DIR, "data", "news_embeddings.npy")
 GENERATED_TRAIN_PATH = os.path.join(_BASE_DIR, "data", "news_train_generated.jsonl")
+DEFAULT_TENCENT_PAGE_URLS = [
+    "https://news.qq.com/",
+    "https://new.qq.com/",
+    "https://new.qq.com/ch/tech/",
+    "https://new.qq.com/ch/finance/",
+    "https://new.qq.com/ch/sports/",
+    "https://new.qq.com/ch/ent/",
+]
+DEFAULT_TENCENT_API_URLS = [
+    NEWS_API,
+    "https://i.news.qq.com/web_feed/get_command_pagination?page=1",
+    "http://api.xcvts.cn/api/hotlist/qq_news?type=new",
+]
+DEFAULT_RSS_URLS = [
+    "https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
+    "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+]
+TRUSTED_DOMAIN_SCORES = {
+    "qq.com": 0.82,
+    "news.qq.com": 0.88,
+    "new.qq.com": 0.86,
+    "bbc.co.uk": 0.86,
+    "bbc.com": 0.86,
+    "news.google.com": 0.74,
+}
+PROVIDER_BASE_SCORES = {
+    "tencent_hot_api": 0.82,
+    "tencent_web": 0.84,
+    "rss": 0.68,
+    "deepseek_fallback": 0.25,
+}
+REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+}
 
 SENTENCE_MODEL_NAME = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
 model = None
@@ -50,6 +98,13 @@ def env_int(name, default):
         return default
 
 
+def env_list(name, default):
+    configured = os.getenv(name, "").strip()
+    if configured:
+        return [value.strip() for value in configured.split(",") if value.strip()]
+    return list(default)
+
+
 def get_embedding_model():
     global model
     if model is not None:
@@ -68,36 +123,522 @@ def load_old_news():
         return []
     try:
         with open(SAVE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            news = json.load(f)
+        if not env_flag("NEWS_KEEP_LLM_FALLBACK_ITEMS", False):
+            news = [item for item in news if item.get("provider") != "deepseek_fallback"]
+        return news
     except:
         return []
 
-def fetch_news():
-    print("🚀 正在抓取新闻...")
+def normalized_utc_now():
+    return datetime.now(timezone.utc).isoformat()
 
+
+def strip_html(text):
+    if not isinstance(text, str):
+        text = str(text or "")
+    cleaned = html.unescape(text or "")
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def normalize_published_at(raw_value):
+    if raw_value is None:
+        return ""
+
+    if isinstance(raw_value, (int, float)):
+        try:
+            value = float(raw_value)
+            if value > 10_000_000_000:
+                value = value / 1000
+            return datetime.fromtimestamp(value, timezone.utc).isoformat()
+        except Exception:
+            return str(raw_value).strip()
+
+    cleaned = str(raw_value).strip()
+    if not cleaned:
+        return ""
+    if cleaned.isdigit():
+        return normalize_published_at(int(cleaned))
+    return cleaned
+
+
+def compact_title_key(title):
+    return re.sub(r"[\W_]+", "", (title or "").lower(), flags=re.UNICODE)
+
+
+def source_domain(url):
     try:
-        res = requests.get(NEWS_API, timeout=10)
-        res.raise_for_status()
-        data = res.json()
+        return urlparse(url).netloc.lower().removeprefix("www.")
+    except Exception:
+        return ""
 
-        news_list = []
 
-        for item in data.get("data", []):
-            title = item.get("title", "") or ""
-            content = item.get("desc", "") or "" # 腾讯API字段
+def calculate_source_credibility_score(item, provider, default_source):
+    url = str(item.get("url") or item.get("link") or item.get("jumpUrl") or "").strip()
+    source = strip_html(str(item.get("source") or item.get("media") or item.get("author") or default_source))
+    domain = source_domain(url)
+    score = PROVIDER_BASE_SCORES.get(provider, 0.55)
 
-            news_list.append({
+    for trusted_domain, trusted_score in TRUSTED_DOMAIN_SCORES.items():
+        if domain == trusted_domain or domain.endswith("." + trusted_domain):
+            score = max(score, trusted_score)
+
+    if source and source not in {"RSS", "DeepSeek fallback"}:
+        score += 0.04
+    if item.get("published_at") or item.get("publish_time") or item.get("pubDate") or item.get("time"):
+        score += 0.03
+    if provider == "deepseek_fallback":
+        score = min(score, 0.35)
+    return round(min(max(score, 0.0), 0.98), 2)
+
+
+def normalize_news_item(item, provider, default_source):
+    title = strip_html(
+        item.get("title")
+        or item.get("name")
+        or item.get("ztTitle")
+        or item.get("sTitle")
+        or item.get("headline")
+        or ""
+    )
+    content = strip_html(
+        item.get("desc")
+        or item.get("summary")
+        or item.get("abstract")
+        or item.get("intro")
+        or item.get("content")
+        or item.get("description")
+        or ""
+    )
+    source = strip_html(
+        item.get("source")
+        or item.get("media")
+        or item.get("author")
+        or item.get("chlname")
+        or default_source
+    )
+    url = str(
+        item.get("url")
+        or item.get("link")
+        or item.get("jumpUrl")
+        or item.get("vurl")
+        or item.get("surl")
+        or ""
+    ).strip()
+    published_at = normalize_published_at(
+        item.get("published_at")
+        or item.get("publish_time")
+        or item.get("pub_time")
+        or item.get("time")
+        or item.get("ctime")
+        or item.get("timestamp")
+        or ""
+    )
+
+    if not title:
+        return None
+
+    return {
+        "title": title,
+        "content": content,
+        "source": source or default_source,
+        "url": url,
+        "published_at": published_at,
+        "fetched_at": normalized_utc_now(),
+        "provider": provider,
+        "source_domain": source_domain(url),
+        "source_credibility_score": calculate_source_credibility_score(
+            {**item, "url": url, "source": source, "published_at": published_at},
+            provider,
+            default_source,
+        ),
+    }
+
+
+def iter_dicts(value, max_items=800):
+    stack = [value]
+    count = 0
+    while stack and count < max_items:
+        current = stack.pop()
+        if isinstance(current, dict):
+            count += 1
+            yield current
+            stack.extend(current.values())
+        elif isinstance(current, list):
+            stack.extend(current)
+
+
+def dedupe_new_items(items, limit=None):
+    unique_items = []
+    seen = set()
+    for item in items:
+        title_key = compact_title_key(item.get("title", ""))
+        url_key = (item.get("url") or "").split("?")[0]
+        dedupe_key = title_key or url_key
+        if not dedupe_key or dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        unique_items.append(item)
+        if limit and len(unique_items) >= limit:
+            break
+    return unique_items
+
+
+def fetch_news_from_hot_api():
+    print("🚀 正在抓取腾讯新闻热榜 API...")
+    news_list = []
+    for api_url in env_list("NEWS_TENCENT_HOT_API_URLS", DEFAULT_TENCENT_API_URLS):
+        try:
+            res = requests.get(api_url, timeout=10, headers=REQUEST_HEADERS)
+            res.raise_for_status()
+            data = res.json()
+
+            for raw_item in iter_dicts(data):
+                item = normalize_news_item(raw_item, "tencent_hot_api", "腾讯新闻")
+                if item:
+                    news_list.append(item)
+
+            print(f"✅ 腾讯热榜 API 抓取成功: {len(news_list)}条 | {api_url}")
+            if news_list:
+                break
+        except Exception as e:
+            print(f"⚠️ 腾讯热榜 API 抓取失败: {api_url} | {e}")
+
+    limit = max(1, env_int("NEWS_TENCENT_MAX_ITEMS", 30))
+    return dedupe_new_items(news_list, limit=limit)
+
+
+class TencentAnchorParser(HTMLParser):
+    def __init__(self, base_url):
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.anchors = []
+        self._current = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "a":
+            return
+        attr_map = dict(attrs)
+        href = (attr_map.get("href") or "").strip()
+        if not href or href.startswith(("javascript:", "#")):
+            return
+        self._current = {
+            "href": urljoin(self.base_url, href),
+            "title": attr_map.get("title") or attr_map.get("aria-label") or "",
+            "text": "",
+        }
+
+    def handle_data(self, data):
+        if self._current is not None:
+            self._current["text"] += data
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "a" and self._current is not None:
+            self.anchors.append(self._current)
+            self._current = None
+
+
+def is_tencent_news_url(url):
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    if not (host.endswith("qq.com") and ("news" in host or host.startswith("new."))):
+        return False
+    if any(blocked in host for blocked in ["video.qq.com", "mail.qq.com"]):
+        return False
+    path = parsed.path.lower()
+    if path in {"", "/"}:
+        return False
+    return bool(re.search(r"(/rain/a/|/omn/|/a/|/cmsn/|/ch/|/news/|/article/|/content/)", path))
+
+
+def parse_tencent_page_items(html_text, page_url):
+    parser = TencentAnchorParser(page_url)
+    try:
+        parser.feed(html_text)
+    except Exception:
+        pass
+
+    fetched_at = normalized_utc_now()
+    items = []
+    for anchor in parser.anchors:
+        url = anchor["href"].split("#")[0]
+        title = strip_html(anchor.get("title") or anchor.get("text") or "")
+        if len(title) < 6 or not is_tencent_news_url(url):
+            continue
+        items.append(
+            {
                 "title": title,
-                "content": content
-            })
+                "content": title,
+                "source": "腾讯新闻",
+                "url": url,
+                "published_at": "",
+                "fetched_at": fetched_at,
+                "provider": "tencent_web",
+                "source_domain": source_domain(url),
+                "source_credibility_score": calculate_source_credibility_score(
+                    {"url": url, "source": "腾讯新闻"},
+                    "tencent_web",
+                    "腾讯新闻",
+                ),
+            }
+        )
 
-        print(f"✅ 抓取成功: {len(news_list)}条")
+    return dedupe_new_items(items)
 
+
+class ArticleTextParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.in_script_like = False
+        self.capture_stack = []
+        self.chunks = []
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in {"script", "style", "noscript", "svg"}:
+            self.in_script_like = True
+        if tag in {"p", "article", "section", "div"}:
+            attr_text = " ".join(str(value or "") for _, value in attrs).lower()
+            if tag == "p" or any(key in attr_text for key in ["article", "content", "text", "正文", "main"]):
+                self.capture_stack.append(tag)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in {"script", "style", "noscript", "svg"}:
+            self.in_script_like = False
+        if self.capture_stack and tag == self.capture_stack[-1]:
+            self.capture_stack.pop()
+
+    def handle_data(self, data):
+        if self.in_script_like or not self.capture_stack:
+            return
+        cleaned = strip_html(data)
+        if len(cleaned) >= 12:
+            self.chunks.append(cleaned)
+
+
+def extract_meta_description(html_text):
+    patterns = [
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']',
+        r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:description["\']',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html_text, flags=re.IGNORECASE)
+        if match:
+            return strip_html(match.group(1))
+    return ""
+
+
+def fetch_article_text(url):
+    if not url or not env_flag("NEWS_FETCH_ARTICLE_TEXT_ENABLED", True):
+        return ""
+    try:
+        res = requests.get(url, timeout=10, headers=REQUEST_HEADERS)
+        res.raise_for_status()
+        content_type = res.headers.get("content-type", "")
+        if "html" not in content_type and "text" not in content_type:
+            return ""
+
+        meta_desc = extract_meta_description(res.text)
+        parser = ArticleTextParser()
+        parser.feed(res.text)
+        text = strip_html("。".join(parser.chunks))
+        if meta_desc and meta_desc not in text:
+            text = f"{meta_desc}。{text}"
+        max_chars = max(300, env_int("NEWS_ARTICLE_TEXT_MAX_CHARS", 2400))
+        return text[:max_chars].strip()
+    except Exception as exc:
+        print(f"⚠️ 原文抓取失败: {url} | {exc}")
+        return ""
+
+
+def enrich_news_items(news_list):
+    if not news_list:
+        return news_list
+
+    max_items = max(0, env_int("NEWS_FETCH_ARTICLE_TEXT_MAX_ITEMS", 18))
+    enriched = []
+    for index, item in enumerate(news_list):
+        item = dict(item)
+        item["source_domain"] = item.get("source_domain") or source_domain(item.get("url") or "")
+        item["source_credibility_score"] = item.get("source_credibility_score") or calculate_source_credibility_score(
+            item,
+            item.get("provider") or "unknown",
+            item.get("source") or "未知来源",
+        )
+        if index < max_items and item.get("url") and not item.get("article_text"):
+            article_text = fetch_article_text(item["url"])
+            if article_text:
+                item["article_text"] = article_text
+                if len(item.get("content") or "") < 80:
+                    item["content"] = article_text[:500]
+                item["article_fetch_status"] = "ok"
+            else:
+                item["article_fetch_status"] = "empty"
+        enriched.append(item)
+    return enriched
+
+
+def fetch_news_from_tencent_pages():
+    print("🌐 正在抓取腾讯新闻网页...")
+    news_list = []
+    limit = max(1, env_int("NEWS_TENCENT_MAX_ITEMS", 30))
+
+    for page_url in env_list("NEWS_TENCENT_PAGE_URLS", DEFAULT_TENCENT_PAGE_URLS):
+        if len(news_list) >= limit:
+            break
+        try:
+            res = requests.get(page_url, timeout=12, headers=REQUEST_HEADERS)
+            res.raise_for_status()
+            items = parse_tencent_page_items(res.text, page_url)
+            print(f"✅ 腾讯网页抓取成功: {len(items)}条 | {page_url}")
+            news_list.extend(items)
+            news_list = dedupe_new_items(news_list, limit=limit)
+        except Exception as e:
+            print(f"⚠️ 腾讯网页抓取失败: {page_url} | {e}")
+
+    return dedupe_new_items(news_list, limit=limit)
+
+
+def fetch_news_from_tencent():
+    if not env_flag("NEWS_TENCENT_ENABLED", True):
+        print("⏭️ 腾讯新闻源已关闭")
+        return []
+
+    api_news = fetch_news_from_hot_api()
+    page_news = fetch_news_from_tencent_pages()
+    news_list = dedupe_new_items(api_news + page_news, limit=max(1, env_int("NEWS_TENCENT_MAX_ITEMS", 30)))
+    print(f"✅ 腾讯新闻源合计: {len(news_list)}条")
+    return news_list
+
+
+def fetch_news():
+    print("🚀 正在抓取新闻 Agent 2.0 多源新闻...")
+    try:
+        news_list = fetch_news_from_tencent()
+        if env_flag("NEWS_RSS_SUPPLEMENT_ENABLED", True):
+            rss_news = fetch_news_from_rss()
+            news_list = dedupe_new_items(news_list + rss_news)
+        print(f"✅ 多源抓取完成: {len(news_list)}条")
         return news_list
 
     except Exception as e:
         print("❌ 抓取失败:", e)
         return []
+
+
+def parse_rss_datetime(raw_value):
+    if not raw_value:
+        return ""
+    try:
+        return parsedate_to_datetime(raw_value).astimezone(timezone.utc).isoformat()
+    except Exception:
+        return str(raw_value).strip()
+
+
+def rss_urls():
+    return env_list("NEWS_RSS_URLS", DEFAULT_RSS_URLS)
+
+
+def parse_rss_items(xml_text, source_url):
+    root = ET.fromstring(xml_text)
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    items = []
+
+    for item in root.findall(".//item"):
+        title = strip_html(item.findtext("title") or "")
+        content = strip_html(
+            item.findtext("description")
+            or item.findtext("{http://search.yahoo.com/mrss/}description")
+            or ""
+        )
+        link = (item.findtext("link") or "").strip()
+        source = strip_html(item.findtext("source") or "")
+        published_at = parse_rss_datetime(item.findtext("pubDate") or item.findtext("published"))
+        if not title:
+            continue
+        items.append(
+            {
+                "title": title,
+                "content": content,
+                "source": source or "RSS",
+                "url": link,
+                "published_at": published_at,
+                "fetched_at": fetched_at,
+                "provider": "rss",
+                "feed_url": source_url,
+                "source_domain": source_domain(link or source_url),
+                "source_credibility_score": calculate_source_credibility_score(
+                    {"url": link or source_url, "source": source or "RSS", "published_at": published_at},
+                    "rss",
+                    source or "RSS",
+                ),
+            }
+        )
+
+    atom_ns = "{http://www.w3.org/2005/Atom}"
+    for entry in root.findall(f".//{atom_ns}entry"):
+        title = strip_html(entry.findtext(f"{atom_ns}title") or "")
+        content = strip_html(
+            entry.findtext(f"{atom_ns}summary")
+            or entry.findtext(f"{atom_ns}content")
+            or ""
+        )
+        link = ""
+        link_node = entry.find(f"{atom_ns}link")
+        if link_node is not None:
+            link = (link_node.attrib.get("href") or "").strip()
+        source = strip_html(entry.findtext(f"{atom_ns}source/{atom_ns}title") or "")
+        published_at = entry.findtext(f"{atom_ns}published") or entry.findtext(f"{atom_ns}updated") or ""
+        if not title:
+            continue
+        items.append(
+            {
+                "title": title,
+                "content": content,
+                "source": source or "RSS",
+                "url": link,
+                "published_at": str(published_at).strip(),
+                "fetched_at": fetched_at,
+                "provider": "rss",
+                "feed_url": source_url,
+                "source_domain": source_domain(link or source_url),
+                "source_credibility_score": calculate_source_credibility_score(
+                    {"url": link or source_url, "source": source or "RSS", "published_at": published_at},
+                    "rss",
+                    source or "RSS",
+                ),
+            }
+        )
+
+    return items
+
+
+def fetch_news_from_rss():
+    if not env_flag("NEWS_RSS_ENABLED", True):
+        print("⏭️ RSS 新闻源已关闭")
+        return []
+
+    news_list = []
+    for url in rss_urls():
+        try:
+            res = requests.get(
+                url,
+                timeout=12,
+                headers=REQUEST_HEADERS,
+            )
+            res.raise_for_status()
+            items = parse_rss_items(res.text, url)
+            print(f"✅ RSS 抓取成功: {len(items)}条 | {url}")
+            news_list.extend(items)
+        except Exception as e:
+            print(f"⚠️ RSS 抓取失败: {url} | {e}")
+
+    return merge_news([], news_list)
 
 
 def extract_json_payload(text):
@@ -151,6 +692,12 @@ def normalize_llm_news_items(payload):
             "published_at": str(item.get("published_at", "")).strip(),
             "fetched_at": fetched_at,
             "provider": "deepseek_fallback",
+            "source_domain": "",
+            "source_credibility_score": calculate_source_credibility_score(
+                item,
+                "deepseek_fallback",
+                "DeepSeek fallback",
+            ),
         })
         seen_titles.add(title)
 
@@ -158,7 +705,7 @@ def normalize_llm_news_items(payload):
 
 
 def fetch_news_with_llm():
-    if not env_flag("NEWS_LLM_FALLBACK_ENABLED", True):
+    if not env_flag("NEWS_LLM_FALLBACK_ENABLED", False):
         print("⏭️ LLM 新闻兜底已关闭")
         return []
 
@@ -198,16 +745,17 @@ def fetch_news_with_llm():
 def merge_news(old_news, new_news):
     print("合并新闻并去重...")
 
-    merged = old_news + new_news
+    merged = new_news + old_news
 
     seen = set()
     unique_news = []
 
     for news in merged:
         title = news.get("title", "").strip()
+        compact_title = compact_title_key(title)
 
-        if title and title not in seen:
-            seen.add(title)
+        if title and compact_title not in seen:
+            seen.add(compact_title)
             unique_news.append(news)
 
     print(f"去重后剩余: {len(unique_news)}条")
@@ -228,19 +776,17 @@ def build_embeddings(news_list):
 
     print("🧠 正在生成embedding...")
 
-    texts = []
-    for news in news_list:
-        text = (news.get("title") or "") + " " + (news.get("content") or "")
-        texts.append(text)
+    texts = [weighted_news_text(news) for news in news_list]
 
     if not texts:
         print("⚠️ 没有新闻文本，跳过embedding生成")
         return
 
     embeddings = embedding_model.encode(texts)
-    embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+    embeddings = embeddings / np.clip(np.linalg.norm(embeddings, axis=1, keepdims=True), 1e-12, None)
 
     np.save(EMBED_PATH, embeddings)
+    save_vector_store(embeddings, news_list, "sentence_transformer", SENTENCE_MODEL_NAME)
 
     print("💾 已保存 embeddings")
 
@@ -309,7 +855,7 @@ def train_transformer_if_needed(train_enabled, rows):
 
     cmd = [
         sys.executable,
-        "train_transformer_news.py",
+        os.path.join("scripts", "train_transformer_news.py"),
         "--data-path",
         os.path.join("data", "news_train.jsonl"),
         "--data-path",
@@ -332,6 +878,9 @@ def run_news_pipeline(train_transformer=False):
     old_news = load_old_news()
     new_news = fetch_news()
     if not new_news:
+        print("🔁 多源新闻不可用，尝试 RSS 新闻源...")
+        new_news = fetch_news_from_rss()
+    if not new_news:
         print("🔁 主新闻源不可用，尝试 LLM 新闻兜底...")
         new_news = fetch_news_with_llm()
 
@@ -339,7 +888,8 @@ def run_news_pipeline(train_transformer=False):
         print("⚠️ 没有数据，不更新")
         return False
 
-    merged_news = merge_news(old_news, new_news)
+    enriched_news = enrich_news_items(new_news)
+    merged_news = merge_news(old_news, enriched_news)
     if merged_news == old_news:
         print("ℹ️ 新闻列表无新增内容，跳过重建与训练")
         return False

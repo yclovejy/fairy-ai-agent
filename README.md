@@ -16,6 +16,9 @@ short_description: 新闻问答、分类、情感分析与语音交互演示
 ## 项目亮点
 
 - 新闻 RAG 检索：基于 `SentenceTransformer` 做相似度召回
+- 新闻 Agent 2.0：腾讯新闻 API + 腾讯网页解析 + Google News/BBC RSS 补源
+- 可信度与原文增强：对新闻源打分，并按 URL 抓取原文正文补足检索上下文
+- 检索增强：持久化新闻向量库，并支持本地 cross-encoder reranker 重排候选结果
 - 新闻情感分析：支持 `正面 / 负面 / 中立` 判断
 - 新闻分类：使用自定义 `Transformer Encoder` 训练 `体育 / 科技 / 财经 / 娱乐`
 - 大模型总结：接入 `DeepSeek` 对检索结果进行归纳总结
@@ -31,23 +34,30 @@ AI Agent/
 ├── app.py                         # FastAPI 服务入口
 ├── agent_v5.py                    # 主 Agent 调度
 ├── deepseek_client.py             # DeepSeek 调用封装
+├── fetch_news.py                  # 新闻源抓取、原文抓取、数据更新
 ├── news_intelligence.py           # 情感分析 / 分类 / 摘要 / 舆情
-├── voice_service.py               # Whisper 语音识别接口
-├── train_transformer_news.py      # Transformer 分类训练脚本
+├── news_retrieval.py              # 持久化向量库与 reranker
 ├── scheduler.py                   # 自动抓取与训练调度
+├── voice_service.py               # Whisper 语音识别接口
 ├── docs/
 │   └── VSCODE_FIX.md              # VS Code 环境问题说明
 ├── data/
 │   ├── news.json
 │   ├── news_embeddings.npy
+│   ├── news_vector_store.npz
 │   ├── news_train.jsonl
 │   └── news_train_generated.jsonl
 ├── frontend/
 │   ├── index.html
 │   ├── script.js
 │   └── style.css
+├── models/
+│   └── news_transformer/
 ├── scripts/
-│   └── activate_env.sh            # conda 环境激活脚本
+│   ├── activate_env.sh            # conda 环境激活脚本
+│   └── train_transformer_news.py  # Transformer 分类训练脚本
+├── Dockerfile
+├── docker-compose.yml
 └── requirements.txt
 ```
 
@@ -82,6 +92,13 @@ NEWS_REFRESH_INTERVAL_SECONDS=1800
 NEWS_AUTO_TRAIN_ENABLED=true
 NEWS_TRAIN_EPOCHS=4
 NEWS_TRAIN_BATCH_SIZE=8
+NEWS_TENCENT_ENABLED=true
+NEWS_TENCENT_MAX_ITEMS=30
+NEWS_RSS_ENABLED=true
+NEWS_RSS_SUPPLEMENT_ENABLED=true
+NEWS_FETCH_ARTICLE_TEXT_ENABLED=true
+NEWS_VECTOR_STORE_ENABLED=true
+NEWS_RERANKER_ENABLED=true
 ```
 
 ## 训练 Transformer 新闻分类模型
@@ -89,7 +106,7 @@ NEWS_TRAIN_BATCH_SIZE=8
 项目内置了一份小型中文样本数据集，可直接训练一个演示版分类模型：
 
 ```bash
-python train_transformer_news.py
+python scripts/train_transformer_news.py
 ```
 
 训练完成后会生成：
@@ -112,12 +129,43 @@ NEWS_BOOTSTRAP_TRAIN_EPOCHS=4
 NEWS_BOOTSTRAP_TRAIN_BATCH_SIZE=8
 ```
 
-新闻主接口不可用时，后台任务会启用 DeepSeek 兜底，生成结构化新闻并继续写入
-`data/news.json`，避免新闻数据长期停更。可通过环境变量控制：
+新闻 Agent 2.0 默认会先尝试腾讯新闻热榜 API，再解析腾讯新闻网页；RSS 不再是唯一备用，而是补充源。默认 RSS 包含 Google News 中文 RSS 与 BBC 中文 RSS，可通过环境变量追加或覆盖：
 
 ```env
-NEWS_LLM_FALLBACK_ENABLED=true
+NEWS_TENCENT_ENABLED=true
+NEWS_TENCENT_HOT_API_URL=https://i.news.qq.com/web_feed/get_command_pagination?page=1
+NEWS_TENCENT_HOT_API_URLS=https://example.com/tencent-compatible-json
+NEWS_TENCENT_PAGE_URLS=https://news.qq.com/,https://new.qq.com/
+NEWS_RSS_ENABLED=true
+NEWS_RSS_SUPPLEMENT_ENABLED=true
+NEWS_RSS_URLS=https://example.com/news/rss,https://example.com/another/rss
+```
+
+新闻更新时会尽量按 URL 抓取原文正文，写入 `article_text`，同时保存 `source_credibility_score`。可信度分数会参与新闻列表展示和检索重排：
+
+```env
+NEWS_FETCH_ARTICLE_TEXT_ENABLED=true
+NEWS_FETCH_ARTICLE_TEXT_MAX_ITEMS=18
+NEWS_ARTICLE_TEXT_MAX_CHARS=2400
+```
+
+向量库默认持久化到 `data/news_vector_store.npz` 和 `data/news_vector_store_meta.json`。如果本地已有 reranker 模型，会启用 cross-encoder 重排；没有本地模型时会自动保留原始 RAG 排序，不会联网下载：
+
+```env
+NEWS_VECTOR_STORE_ENABLED=true
+NEWS_RERANKER_ENABLED=true
+NEWS_RERANKER_MODEL_NAME=BAAI/bge-reranker-base
+NEWS_RERANKER_MAX_CANDIDATES=30
+```
+
+Google News 和 BBC 当前通过 RSS/feed 拉取，不配置付费 API key，也不会在本项目里产生 API 调用费用。它们仍受各自 feed/内容使用条款约束：课程演示和本地研究通常够用；如果要商业化、批量再分发、公开聚合展示全文，需要单独核对授权和归因要求。
+
+DeepSeek 兜底默认关闭，因为它只能生成参考线索，不能当作事实新闻源。确实需要演示兜底时再开启：
+
+```env
+NEWS_LLM_FALLBACK_ENABLED=false
 NEWS_LLM_FALLBACK_MAX_ITEMS=12
+NEWS_KEEP_LLM_FALLBACK_ITEMS=false
 ```
 
 ## 启动项目
@@ -251,9 +299,11 @@ docker compose logs -f
 
 - 启动时立即抓取一次新闻
 - 每 `1800` 秒，也就是每 `30` 分钟自动刷新
-- 自动更新 `data/news.json` 和 `data/news_embeddings.npy`
+- 自动更新 `data/news.json`、`data/news_embeddings.npy` 和 `data/news_vector_store.npz`
+- 自动为新闻补充来源可信度、URL 原文正文和来源域名
 - 自动生成弱监督训练集 `data/news_train_generated.jsonl`
-- 主新闻源失败或返回空时，会调用 DeepSeek 兜底生成最新热点并继续保存到 `news.json`
+- 腾讯新闻源会优先尝试 API 和网页解析，RSS 作为补充源继续提供 Google News/BBC 等来源
+- 多源新闻仍为空时，会调用 DeepSeek 兜底生成最新热点并继续保存到 `news.json`
 - 如果开启 `NEWS_AUTO_TRAIN_ENABLED=true`，新闻刷新后会自动重训 Transformer 分类模型，下一次新闻问答会热重载新模型
 - 如果部署时没有携带 `model.pt`，服务启动阶段会先自动训练一个 Transformer 权重文件
 - `docker compose` 会把宿主机的 `./data` 和 `./models` 挂载到容器内，避免生成文件留在容器里丢失

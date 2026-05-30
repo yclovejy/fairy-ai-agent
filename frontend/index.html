@@ -132,6 +132,7 @@
                 <section class="welcome-screen" id="welcome-screen" aria-label="Fairy 欢迎页">
                     <div class="agent-stage">
                         <div class="agent-aura" aria-hidden="true"></div>
+                        <div class="breath-field" aria-hidden="true"></div>
                         <div class="agent-eye agent-eye-hero" id="agent-eye" aria-label="Fairy 智能体头像" role="img">
                             <div class="eye-shell">
                                 <div class="eye-white">
@@ -144,6 +145,7 @@
                         </div>
                     </div>
                     <h2>我是 Fairy，你的智能管家</h2>
+                    <div class="breath-lamp" aria-hidden="true"></div>
                 </section>
             </div>
 
@@ -158,20 +160,22 @@
                 </button>
             </div>
 
+            <button class="composer-toggle" id="composer-toggle" type="button" aria-label="显示输入框" aria-pressed="false">^</button>
+
             <form class="input-area" id="chat-form">
                 <div class="input-wrapper">
+                    <button class="tool-btn input-plus-btn" id="input-actions-btn" type="button" title="添加附件" aria-label="添加附件">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 5v14M5 12h14"></path>
+                        </svg>
+                    </button>
                     <textarea
                         id="user-input"
-                        placeholder="输入消息，Enter 发送，Shift + Enter 换行"
+                        placeholder="问 Fairy"
                         rows="1"
                         autocomplete="off"
                     ></textarea>
                     <div class="input-toolbar">
-                        <button class="tool-btn" id="input-actions-btn" type="button" title="添加附件" aria-label="添加附件">
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="m21.4 11.6-8.7 8.7a6 6 0 0 1-8.5-8.5l9.3-9.3a4 4 0 1 1 5.7 5.7l-9.4 9.4a2 2 0 0 1-2.8-2.8l8.7-8.7"></path>
-                            </svg>
-                        </button>
                         <button class="tool-btn" type="button" title="联网搜索" aria-label="联网搜索">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <circle cx="12" cy="12" r="9"></circle>
@@ -218,6 +222,18 @@
             <div class="settings-body">
                 <section class="settings-section">
                     <h3>外观</h3>
+                    <div class="setting-row vertical">
+                        <div>
+                            <strong>明暗模式</strong>
+                            <span>白天、夜间，或跟随系统设置自动切换</span>
+                        </div>
+                        <div class="segmented-control" data-setting-group="appearance">
+                            <button type="button" data-appearance-mode="system">跟随系统</button>
+                            <button type="button" data-appearance-mode="light">白天</button>
+                            <button type="button" data-appearance-mode="dark">夜间</button>
+                        </div>
+                    </div>
+
                     <div class="setting-row vertical">
                         <div>
                             <strong>主题颜色</strong>
