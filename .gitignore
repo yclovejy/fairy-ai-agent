@@ -12,6 +12,7 @@ env/
 # 数据文件（非常重要）
 data/*.json
 data/*.npy
+data/*.npz
 data/news_train_generated.jsonl
 models/news_transformer/*.pt
 

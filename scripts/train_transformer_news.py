@@ -4,7 +4,12 @@ import argparse
 import json
 import os
 import random
+import sys
 from collections import Counter
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import torch
 from sklearn.model_selection import train_test_split
@@ -14,7 +19,7 @@ from torch.utils.data import DataLoader, Dataset
 from news_intelligence import CONFIG_PATH, LABELS, MODEL_DIR, MODEL_PATH, VOCAB_PATH, CharTokenizer, TransformerNewsClassifier
 
 
-DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "news_train.jsonl")
+DATA_PATH = os.path.join(PROJECT_ROOT, "data", "news_train.jsonl")
 
 
 def set_seed(seed: int) -> None:

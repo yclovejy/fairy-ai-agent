@@ -95,6 +95,7 @@ class Query(BaseModel):
 class NewsArticle(BaseModel):
     title: str = ""
     content: str = ""
+    url: str = ""
 
 
 def strip_for_tts(text: str) -> str:
@@ -110,16 +111,25 @@ def chat_endpoint(q: Query):
 
 @app.post("/news/analyze")
 def analyze_news(article: NewsArticle):
-    if not article.title and not article.content:
-        raise HTTPException(status_code=400, detail="请至少提供标题或正文。")
+    content = article.content
+    article_fetch_status = "not_requested"
+    if article.url and not content:
+        from fetch_news import fetch_article_text
 
-    insight = news_service.analyze_article(article.title, article.content)
+        content = fetch_article_text(article.url)
+        article_fetch_status = "ok" if content else "empty"
+
+    if not article.title and not content:
+        raise HTTPException(status_code=400, detail="请至少提供标题、正文或可抓取的 URL。")
+
+    insight = news_service.analyze_article(article.title, content)
     return {
         "title": insight.title,
         "category": insight.category,
         "sentiment": insight.sentiment,
         "summary": insight.summary,
         "score_detail": insight.score_detail,
+        "article_fetch_status": article_fetch_status,
     }
 
 

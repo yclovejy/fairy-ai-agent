@@ -5,6 +5,7 @@ import os
 import re
 import threading
 import requests
+from datetime import datetime
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 try:
@@ -14,6 +15,13 @@ except Exception:
 
 from deepseek_client import deepseek_client
 from news_intelligence import NewsIntelligenceService, format_analysis_block
+from news_retrieval import (
+    CrossEncoderReranker,
+    load_vector_store,
+    save_vector_store,
+    source_credibility_line,
+    weighted_news_text,
+)
 
 load_dotenv()
 
@@ -28,11 +36,17 @@ embedding_model = None
 embedding_provider = "tfidf"
 news_vectorizer = None
 news_intelligence = NewsIntelligenceService()
+news_reranker = CrossEncoderReranker()
 _news_asset_lock = threading.Lock()
 _news_assets_signature = None
 NEWS_HINT_WORDS = [
     "新闻", "热点", "舆情", "情感分析", "最近发生", "最新", "今日", "今天",
     "股市", "财经", "科技", "娱乐", "体育", "比赛", "夺冠", "票房", "AI",
+]
+LATEST_NEWS_PATTERNS = [
+    r"(最新|今日|今天|现在|目前).*(新闻|热点|消息|动态|资讯)",
+    r"(新闻|热点|消息|动态|资讯).*(最新|今日|今天|现在|目前)",
+    r"(有什么|有哪些).*(新闻|热点|消息|动态|资讯)",
 ]
 # ========= 数据 =========
 QWEATHER_API_KEY = os.getenv("QWEATHER_API_KEY")
@@ -61,6 +75,59 @@ def safe_text(text):
     if not isinstance(text, str):
         text = str(text)
     return text.encode('utf-8', 'surrogatepass').decode('utf-8', 'ignore')
+
+
+def normalize_search_text(text):
+    text = safe_text(text or "").lower()
+    return re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
+
+
+def news_item_text(news):
+    return " ".join(
+        safe_text(news.get(field, ""))
+        for field in ["title", "content", "summary", "desc", "source", "published_at", "fetched_at"]
+        if news.get(field)
+    )
+
+
+def get_news_store_updated_at():
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(NEWS_PATH)).strftime("%Y-%m-%d %H:%M")
+    except OSError:
+        return "未知"
+
+
+def looks_like_latest_news_query(query):
+    return any(re.search(pattern, query) for pattern in LATEST_NEWS_PATTERNS)
+
+
+def parse_news_time(value):
+    if not value:
+        return 0.0
+    raw = safe_text(value).strip()
+    try:
+        if raw.isdigit():
+            timestamp = int(raw)
+            if timestamp > 10_000_000_000:
+                timestamp = timestamp / 1000
+            return float(timestamp)
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+def latest_news_items(limit=20):
+    reliable_items = [item for item in news_list if item.get("provider") != "deepseek_fallback"]
+    candidates = reliable_items or news_list
+
+    def sort_key(item):
+        return (
+            parse_news_time(item.get("published_at")),
+            parse_news_time(item.get("fetched_at")),
+        )
+
+    return sorted(candidates, key=sort_key, reverse=True)[:limit]
+
 
 def load_news():
     if not os.path.exists(NEWS_PATH):
@@ -93,16 +160,17 @@ def prepare_news_embeddings():
 
     news_texts = []
     for news in news_list:
-        title = news.get("title") or ""
-        content = news.get("content") or ""
-        news_texts.append((title * 3) + " " + content)
+        news_texts.append(weighted_news_text(news))
 
     if not news_texts:
         news_embeddings = None
         news_vectorizer = None
         return
 
-    if embedding_model is not None and os.path.exists(EMBED_PATH):
+    if embedding_model is not None:
+        news_embeddings = load_vector_store(news_list, "sentence_transformer", SENTENCE_MODEL_NAME)
+
+    if embedding_model is not None and news_embeddings is None and os.path.exists(EMBED_PATH):
         print("加载本地 embedding")
         news_embeddings = np.load(EMBED_PATH)
     else:
@@ -120,6 +188,7 @@ def prepare_news_embeddings():
             print("embedding数量与新闻数量不一致，重新生成embedding")
             news_embeddings = embedding_model.encode(news_texts)
             news_embeddings = news_embeddings / np.linalg.norm(news_embeddings, axis=1, keepdims=True)
+        save_vector_store(news_embeddings, news_list, "sentence_transformer", SENTENCE_MODEL_NAME)
         embedding_provider = "sentence_transformer"
         news_vectorizer = None
         return
@@ -172,26 +241,72 @@ def ensure_news_available():
 
 # ========= 工具 =========
 def keyword_match(query, top_k=10):
-    results = []
+    scored_results = []
+    query_compact = normalize_search_text(query)
+    query_terms = [
+        normalize_search_text(term)
+        for term in re.split(r"[\s，。！？、,.!?:：；;（）()《》【】\\[\\]\"'“”‘’]+", safe_text(query))
+        if normalize_search_text(term)
+    ]
 
     for news in news_list:
         title = news.get("title") or ""
-        content = news.get("content") or ""
+        text = news_item_text(news)
+        title_compact = normalize_search_text(title)
+        text_compact = normalize_search_text(text)
 
-        if query in title or query in content:
-            results.append(news)
+        score = 0.0
+        if query_compact and title_compact:
+            if query_compact == title_compact:
+                score += 100.0
+            elif query_compact in title_compact or title_compact in query_compact:
+                score += 80.0
 
-    return results[:top_k]
+        if query_compact and text_compact and query_compact in text_compact:
+            score += 60.0
+
+        for term in query_terms:
+            if len(term) < 2:
+                continue
+            if term in title_compact:
+                score += 8.0
+            elif term in text_compact:
+                score += 3.0
+
+        if score > 0:
+            scored_results.append((score, news))
+
+    scored_results.sort(key=lambda item: item[0], reverse=True)
+    return [news for _, news in scored_results[:top_k]]
+
+
+def has_local_news_match(query):
+    query_compact = normalize_search_text(query)
+    if len(query_compact) < 6:
+        return False
+
+    for news in news_list[:1000]:
+        title_compact = normalize_search_text(news.get("title") or "")
+        if not title_compact:
+            continue
+        if query_compact == title_compact:
+            return True
+        if len(query_compact) >= 10 and (query_compact in title_compact or title_compact in query_compact):
+            return True
+
+    return False
 
 def retrieve_news(query, top_k=20):
+    ensure_latest_news_assets()
+
     if news_embeddings is None:
-        return []
+        return news_reranker.rerank(query, keyword_match(query, top_k=top_k), top_k=top_k)
 
-    keyword_results = keyword_match(query)
+    keyword_results = keyword_match(query, top_k=top_k)
 
-    if len(keyword_results) >= 5:
+    if len(keyword_results) >= 5 or has_local_news_match(query):
         print("[检索] 使用关键词命中")
-        return keyword_results[:top_k]
+        return news_reranker.rerank(query, keyword_results, top_k=top_k)
 
     if embedding_provider == "sentence_transformer" and embedding_model is not None:
         query_embedding = embedding_model.encode(query)
@@ -201,10 +316,13 @@ def retrieve_news(query, top_k=20):
             return keyword_results[:top_k]
         query_embedding = news_vectorizer.transform([query]).toarray()[0].astype(np.float32)
 
+    if np.linalg.norm(query_embedding) == 0:
+        return keyword_results[:top_k]
+
     scores = np.dot(news_embeddings, query_embedding)
     top_indices = np.argsort(scores)[-top_k:][::-1]
 
-    embed_results = [news_list[i] for i in top_indices if i < len(news_list)]
+    embed_results = [news_list[i] for i in top_indices if i < len(news_list) and scores[i] > 0]
 
     combined = keyword_results + embed_results
 
@@ -218,7 +336,7 @@ def retrieve_news(query, top_k=20):
             final_results.append(news)
 
     print(f"[检索] keyword:{len(keyword_results)} | embedding:{len(embed_results)}")
-    return final_results[:top_k]
+    return news_reranker.rerank(query, final_results, top_k=top_k)
 
 
 def build_news_prompt(query, result, analysis_block):
@@ -232,6 +350,9 @@ def build_news_prompt(query, result, analysis_block):
 检索新闻：
 {json.dumps(picked, ensure_ascii=False, indent=2)}
 
+本地新闻库更新时间：
+{get_news_store_updated_at()}
+
 智能分析结果：
 {analysis_block}
 
@@ -239,7 +360,8 @@ def build_news_prompt(query, result, analysis_block):
 1. 先给出简洁结论，再给出原因。
 2. 可以概括行业趋势、舆情倾向、潜在风险。
 3. 如果涉及情感分析，请明确说明偏正面、负面还是中立。
-4. 保持条理清晰，适合课程大作业展示。
+4. 如果用户问“最新/今天/目前”，必须说明以上结果来自本地新闻库，不能把它说成实时全网新闻。
+5. 保持条理清晰，适合课程大作业展示。
 """
 
 
@@ -263,7 +385,7 @@ def build_news_fallback_prompt(query):
 def format_local_news_answer(query, result, analysis):
     if not result:
         return (
-            "本地新闻库暂时没有可用结果。我可以先做通用分析；"
+            f"本地新闻库暂时没有可用结果（本地库更新时间：{get_news_store_updated_at()}）。我可以先做通用分析；"
             "如果要看实时热点，请稍后再试，系统会继续自动更新新闻库。"
         )
 
@@ -274,18 +396,51 @@ def format_local_news_answer(query, result, analysis):
         "",
         "新闻总结：",
         f"本次共检索到 {len(result)} 条相关新闻，系统优先展示前 {len(analysis.get('insights', []))} 条进行分析。",
+        f"本地新闻库更新时间：{get_news_store_updated_at()}。",
         analysis.get("public_opinion", "当前样本不足，暂时无法形成稳定舆情判断。"),
     ]
+    return "\n".join(lines)
+
+
+def format_latest_news_answer(query, result, analysis):
+    if not result:
+        return format_local_news_answer(query, result, analysis)
+
+    lines = [
+        "这是本地新闻库当前可用的最新列表，不等于实时全网最新。",
+        f"本地新闻库更新时间：{get_news_store_updated_at()}。",
+        "",
+        "热点列表：",
+    ]
+
+    for index, item in enumerate(result[:10], start=1):
+        title = safe_text(item.get("title") or "无标题")
+        content = safe_text(item.get("content") or item.get("summary") or item.get("desc") or "")
+        source = source_credibility_line(item)
+        published_at = safe_text(item.get("published_at") or "")
+        if len(content) > 90:
+            content = content[:90].rstrip() + "..."
+        meta = " | ".join(value for value in [source, published_at] if value)
+        lines.append(f"{index}. {title}" + (f"（{meta}）" if meta else ""))
+        if content:
+            lines.append(f"   {content}")
+
+    lines.extend(["", format_analysis_block(analysis)])
     return "\n".join(lines)
 
 # ========= 新闻Agent =========
 def news_agent(query):
     ensure_news_available()
     news_intelligence.refresh_if_needed()
-    result = retrieve_news(query)
+    if looks_like_latest_news_query(query):
+        result = latest_news_items(limit=20)
+    else:
+        result = retrieve_news(query)
 
     if not deepseek_client.is_enabled():
         analysis = news_intelligence.analyze_news_list(result, top_k=5)
+        if looks_like_latest_news_query(query):
+            return format_latest_news_answer(query, result, analysis)
         return format_local_news_answer(query, result, analysis)
 
     if not result:
@@ -305,6 +460,9 @@ def news_agent(query):
             return format_local_news_answer(query, result, analysis)
 
     analysis = news_intelligence.analyze_news_list(result, top_k=5)
+    if looks_like_latest_news_query(query):
+        return format_latest_news_answer(query, result, analysis)
+
     analysis_block = format_analysis_block(analysis)
 
     try:
@@ -508,6 +666,9 @@ def tool_agent(query):
 # ========= 决策Agent =========
 def decide_agent(query):
     lowered = query.lower()
+    ensure_latest_news_assets()
+    if looks_like_latest_news_query(query) or has_local_news_match(query):
+        return "news"
     if any(word in query for word in NEWS_HINT_WORDS) or "news" in lowered:
         return "news"
     if re.search(r"(最近|最新|今日|今天).*(发生|情况|动态|走势|消息)", query):
