@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote_plus, urljoin, urlparse
 
 import numpy as np
 import requests
@@ -47,6 +47,9 @@ DEFAULT_RSS_URLS = [
     "https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
     "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
 ]
+GOOGLE_NEWS_SEARCH_RSS = (
+    "https://news.google.com/rss/search?q={query}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+)
 TRUSTED_DOMAIN_SCORES = {
     "qq.com": 0.82,
     "news.qq.com": 0.88,
@@ -284,6 +287,21 @@ def dedupe_new_items(items, limit=None):
         if limit and len(unique_items) >= limit:
             break
     return unique_items
+
+
+def normalized_url_key(url):
+    if not url:
+        return ""
+    parsed = urlparse(str(url).strip())
+    if not parsed.netloc:
+        return ""
+    return f"{parsed.scheme or 'https'}://{parsed.netloc.lower().removeprefix('www.')}{parsed.path}".rstrip("/")
+
+
+def news_identity_keys(item):
+    title_key = compact_title_key(item.get("title", ""))
+    url_key = normalized_url_key(item.get("url") or "")
+    return {key for key in [title_key, url_key] if key}
 
 
 def fetch_news_from_hot_api():
@@ -641,6 +659,48 @@ def fetch_news_from_rss():
     return merge_news([], news_list)
 
 
+def normalize_news_search_query(query):
+    cleaned = strip_html(query or "")
+    cleaned = re.sub(
+        r"(最新|最近|今日|今天|现在|目前|这几天|近几天|过去\d+天|近\d+天|新闻|热点|消息|动态|资讯|有哪些|有什么|帮我|查询|搜索)",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or "热点 新闻"
+
+
+def fetch_news_from_search_rss(query):
+    if not env_flag("NEWS_SEARCH_RSS_ENABLED", True):
+        print("⏭️ 新闻搜索 RSS 已关闭")
+        return []
+
+    search_query = normalize_news_search_query(query)
+    max_items = max(1, env_int("NEWS_SEARCH_RSS_MAX_ITEMS", 30))
+    url = os.getenv("NEWS_SEARCH_RSS_URL", GOOGLE_NEWS_SEARCH_RSS).format(
+        query=quote_plus(search_query)
+    )
+
+    try:
+        res = requests.get(url, timeout=12, headers=REQUEST_HEADERS)
+        res.raise_for_status()
+        items = parse_rss_items(res.text, url)
+        for item in items:
+            item["provider"] = "search_rss"
+            item["search_query"] = search_query
+            item["source_credibility_score"] = calculate_source_credibility_score(
+                item,
+                "rss",
+                item.get("source") or "Google News",
+            )
+        items = dedupe_new_items(items, limit=max_items)
+        print(f"✅ 新闻搜索 RSS 抓取成功: {len(items)}条 | {search_query}")
+        return items
+    except Exception as e:
+        print(f"⚠️ 新闻搜索 RSS 抓取失败: {search_query} | {e}")
+        return []
+
+
 def extract_json_payload(text):
     cleaned = (text or "").strip()
     cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
@@ -751,12 +811,11 @@ def merge_news(old_news, new_news):
     unique_news = []
 
     for news in merged:
-        title = news.get("title", "").strip()
-        compact_title = compact_title_key(title)
-
-        if title and compact_title not in seen:
-            seen.add(compact_title)
-            unique_news.append(news)
+        keys = news_identity_keys(news)
+        if not keys or seen.intersection(keys):
+            continue
+        seen.update(keys)
+        unique_news.append(news)
 
     print(f"去重后剩余: {len(unique_news)}条")
     return unique_news
@@ -874,16 +933,8 @@ def train_transformer_if_needed(train_enabled, rows):
         print(f"❌ Transformer 训练失败，退出码: {completed.returncode}")
 
 
-def run_news_pipeline(train_transformer=False):
+def persist_news_update(new_news, train_transformer=False):
     old_news = load_old_news()
-    new_news = fetch_news()
-    if not new_news:
-        print("🔁 多源新闻不可用，尝试 RSS 新闻源...")
-        new_news = fetch_news_from_rss()
-    if not new_news:
-        print("🔁 主新闻源不可用，尝试 LLM 新闻兜底...")
-        new_news = fetch_news_with_llm()
-
     if not new_news:
         print("⚠️ 没有数据，不更新")
         return False
@@ -901,6 +952,32 @@ def run_news_pipeline(train_transformer=False):
     save_generated_training_rows(generated_rows)
     train_transformer_if_needed(train_transformer, generated_rows)
     return True
+
+
+def run_news_pipeline(train_transformer=False):
+    new_news = fetch_news()
+    if not new_news:
+        print("🔁 多源新闻不可用，尝试 RSS 新闻源...")
+        new_news = fetch_news_from_rss()
+    if not new_news:
+        print("🔁 主新闻源不可用，尝试 LLM 新闻兜底...")
+        new_news = fetch_news_with_llm()
+    return persist_news_update(new_news, train_transformer=train_transformer)
+
+
+def refresh_news_for_query(query, train_transformer=False):
+    search_news = fetch_news_from_search_rss(query)
+    general_news = []
+    if env_flag("NEWS_QUERY_REFRESH_INCLUDE_GENERAL", True):
+        general_news = fetch_news()
+    new_news = dedupe_new_items(search_news + general_news)
+    if not new_news:
+        print("🔁 查询新闻源不可用，尝试 RSS 新闻源...")
+        new_news = fetch_news_from_rss()
+    if not new_news:
+        print("🔁 查询新闻源不可用，尝试 LLM 新闻兜底...")
+        new_news = fetch_news_with_llm()
+    return persist_news_update(new_news, train_transformer=train_transformer)
 
 # ========= 主流程 =========
 if __name__ == "__main__":
