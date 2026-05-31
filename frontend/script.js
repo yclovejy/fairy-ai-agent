@@ -502,7 +502,11 @@ function renderCurrentConversation() {
 
     updateChatSurfaceState();
     updateComposerState();
-    scrollToBottom();
+    if (chatTurns.length > 0) {
+        scrollToBottom();
+    } else {
+        chatMessages.scrollTop = 0;
+    }
 }
 
 function loadConversation(conversationId) {
@@ -521,7 +525,7 @@ function loadConversation(conversationId) {
     persistConversations();
     renderConversationHistory();
     renderCurrentConversation();
-    composerPinned = true;
+    composerPinned = false;
     updateComposerState();
 }
 
@@ -562,10 +566,11 @@ async function submitMessage(message) {
     if (isLoading) return;
 
     closeSidebar();
-    composerPinned = true;
+    composerPinned = false;
     updateComposerState();
     userInput.value = "";
     autoResize();
+    userInput.blur();
     
     if (welcomeScreen) {
         welcomeScreen.style.display = "none";
@@ -639,7 +644,7 @@ async function sendVoiceMessage(transcript) {
     if (isLoading || !transcript) return;
 
     closeSidebar();
-    composerPinned = true;
+    composerPinned = false;
     updateComposerState();
     if (welcomeScreen) {
         welcomeScreen.style.display = "none";
@@ -804,7 +809,10 @@ function updateChatSurfaceState() {
         main.classList.toggle("has-messages", hasMessages);
     }
     if (quickPrompts) {
-        quickPrompts.hidden = !hasMessages;
+        quickPrompts.hidden = true;
+    }
+    if (!hasMessages) {
+        chatMessages.scrollTop = 0;
     }
     updateComposerState();
 }
@@ -814,11 +822,20 @@ function hasConversationOnScreen() {
 }
 
 function shouldShowComposer() {
-    return hasConversationOnScreen() || composerPinned || composerHovered || composerFocused;
+    return composerPinned || composerHovered || composerFocused;
+}
+
+function focusComposerInput() {
+    if (!userInput) return;
+    try {
+        userInput.focus({ preventScroll: true });
+    } catch (error) {
+        userInput.focus();
+    }
 }
 
 function updateComposerState() {
-    const locked = hasConversationOnScreen();
+    const locked = false;
     const visible = shouldShowComposer();
     document.body.classList.toggle("composer-locked", locked);
     document.body.classList.toggle("input-visible", visible);
@@ -840,37 +857,29 @@ function initComposerReveal() {
 
     inputArea?.addEventListener("mouseleave", () => {
         composerHovered = false;
-        if (!composerFocused && !hasConversationOnScreen()) {
-            composerPinned = false;
-        }
         updateComposerState();
     });
 
     userInput?.addEventListener("focus", () => {
         composerFocused = true;
-        composerPinned = true;
         updateComposerState();
     });
 
     userInput?.addEventListener("blur", () => {
         composerFocused = false;
-        if (!hasConversationOnScreen()) {
-            composerPinned = false;
-        }
         updateComposerState();
     });
 
     composerToggle?.addEventListener("click", () => {
-        if (hasConversationOnScreen()) {
-            userInput?.focus();
-            updateComposerState();
-            return;
+        composerPinned = !composerPinned;
+        if (composerPinned) {
+            composerHovered = true;
+        } else {
+            composerHovered = false;
         }
-        composerPinned = !shouldShowComposer();
-        composerHovered = composerPinned;
         updateComposerState();
         if (composerPinned) {
-            window.setTimeout(() => userInput?.focus(), 120);
+            window.setTimeout(focusComposerInput, 120);
         } else {
             userInput?.blur();
         }

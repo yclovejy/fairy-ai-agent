@@ -28,6 +28,12 @@
     --transition: 180ms ease;
 }
 
+@property --bubble-angle {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -38,6 +44,7 @@ html,
 body {
     height: 100%;
     overflow: hidden;
+    overscroll-behavior: none;
 }
 
 body[data-theme="violet"] {
@@ -96,6 +103,8 @@ body {
     color: var(--text);
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", Arial, sans-serif;
     letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
     background:
         radial-gradient(circle at 54% 34%, rgba(var(--blue-rgb), 0.11), transparent 26%),
         linear-gradient(135deg, var(--page) 0%, #f4f7ff 48%, var(--page) 100%);
@@ -583,8 +592,14 @@ body.input-visible .chat-main::before {
     align-items: center;
     gap: 20px;
     width: 100%;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    padding: 24px 36px 80px;
+}
+
+.chat-main.has-messages .chat-messages {
     overflow-y: auto;
-    padding: 24px 36px 190px;
+    padding-bottom: clamp(280px, 34vh, 360px);
 }
 
 .welcome-screen {
@@ -609,16 +624,24 @@ body.input-visible .chat-main::before {
 
 .breath-field {
     position: absolute;
-    inset: 32% -180% -128% -180%;
+    inset: 22% -260% -190% -260%;
     pointer-events: none;
     background:
-        radial-gradient(circle, rgba(255, 255, 255, 0.80) 0 1px, transparent 1.5px),
-        radial-gradient(circle, rgba(var(--blue-rgb), 0.32) 0 1px, transparent 1.8px);
-    background-size: 16px 16px, 22px 22px;
+        radial-gradient(circle, rgba(255, 255, 255, 0.86) 0 1px, transparent 1.55px),
+        radial-gradient(circle, rgba(var(--blue-rgb), 0.34) 0 1px, transparent 1.85px);
+    background-size: 15px 15px, 22px 22px;
     background-position: 0 0, 9px 12px;
-    mask-image: radial-gradient(ellipse at 50% 65%, #000 0 28%, transparent 70%);
+    clip-path: polygon(50% 4%, 100% 32%, 100% 100%, 0 100%, 0 32%);
+    mask-image:
+        radial-gradient(ellipse at 50% 50%, #000 0 18%, rgba(0, 0, 0, 0.84) 37%, rgba(0, 0, 0, 0.48) 55%, transparent 80%),
+        linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+    mask-composite: intersect;
+    -webkit-mask-image:
+        radial-gradient(ellipse at 50% 50%, #000 0 18%, rgba(0, 0, 0, 0.84) 37%, rgba(0, 0, 0, 0.48) 55%, transparent 80%),
+        linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+    -webkit-mask-composite: source-in;
     opacity: 0;
-    transform: translateY(34px) scale(0.94);
+    transform: translateY(26px) scale(0.98);
     transition: opacity 360ms ease, transform 420ms ease;
 }
 
@@ -856,10 +879,12 @@ body.agent-thinking .agent-aura {
     background-size: 240% 100%;
     background-clip: text;
     -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    backface-visibility: hidden;
     transition:
         opacity 320ms ease,
         transform 420ms cubic-bezier(.2, .85, .2, 1),
-        filter 320ms ease;
+        color 320ms ease;
 }
 
 body.input-hidden .welcome-screen h2 {
@@ -869,7 +894,6 @@ body.input-hidden .welcome-screen h2 {
 body.input-visible .welcome-screen h2,
 body.composer-locked .welcome-screen h2 {
     opacity: 0;
-    filter: blur(10px);
     transform: translateY(-18px) scale(0.98);
     pointer-events: none;
 }
@@ -902,12 +926,10 @@ body.composer-locked .breath-lamp {
     0%, 100% {
         opacity: 0.82;
         background-position: 0% 50%;
-        filter: drop-shadow(0 0 0 rgba(var(--blue-rgb), 0));
     }
     50% {
         opacity: 1;
         background-position: 100% 50%;
-        filter: drop-shadow(0 0 22px rgba(var(--blue-rgb), 0.26));
     }
 }
 
@@ -925,7 +947,7 @@ body.composer-locked .breath-lamp {
     left: 50%;
     bottom: 126px;
     z-index: 2;
-    display: none;
+    display: none !important;
     align-items: center;
     justify-content: center;
     gap: 12px;
@@ -934,7 +956,7 @@ body.composer-locked .breath-lamp {
 }
 
 .chat-main.has-messages .quick-prompts {
-    display: flex;
+    display: none !important;
 }
 
 .suggestion-card,
@@ -1044,12 +1066,16 @@ body.composer-locked .breath-lamp {
 }
 
 .message.loading .message-bubble {
+    overflow: hidden;
+    isolation: isolate;
+    --bubble-angle: 0deg;
     border-color: rgba(var(--blue-rgb), 0.24);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(244, 249, 255, 0.72));
     box-shadow:
         0 0 0 1px rgba(var(--blue-rgb), 0.08),
         0 18px 54px rgba(var(--blue-rgb), 0.16);
+    animation: loadingBubbleBreathe 2.6s ease-in-out infinite;
 }
 
 body[data-appearance="dark"] .message.loading .message-bubble {
@@ -1060,17 +1086,33 @@ body[data-appearance="dark"] .message.loading .message-bubble {
 .message.loading .message-bubble::before {
     content: "";
     position: absolute;
-    inset: -80%;
+    inset: -1px;
+    z-index: 0;
+    padding: 2px;
+    border-radius: inherit;
     background: conic-gradient(
-        from 0deg,
-        transparent,
-        rgba(69, 137, 255, 0.16),
-        rgba(111, 231, 198, 0.26),
-        rgba(182, 108, 255, 0.22),
-        rgba(255, 128, 189, 0.18),
-        transparent
+        from var(--bubble-angle),
+        rgba(69, 137, 255, 0.15),
+        rgba(111, 231, 198, 0.92),
+        rgba(125, 220, 255, 0.24),
+        rgba(182, 108, 255, 0.88),
+        rgba(255, 128, 189, 0.52),
+        rgba(69, 137, 255, 0.15)
     );
-    animation: bubbleAurora 2.4s linear infinite;
+    pointer-events: none;
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: bubbleAurora 2.6s linear infinite;
+}
+
+.message.loading .message-bubble::after {
+    content: none;
 }
 
 .message.loading .message-bubble > * {
@@ -1080,7 +1122,16 @@ body[data-appearance="dark"] .message.loading .message-bubble {
 
 @keyframes bubbleAurora {
     to {
-        transform: rotate(1turn);
+        --bubble-angle: 360deg;
+    }
+}
+
+@keyframes loadingBubbleBreathe {
+    50% {
+        box-shadow:
+            0 0 0 1px rgba(var(--blue-rgb), 0.12),
+            0 18px 54px rgba(var(--blue-rgb), 0.20),
+            0 0 46px rgba(125, 220, 255, 0.20);
     }
 }
 
@@ -1188,13 +1239,36 @@ body[data-appearance="dark"] .message.loading .message-bubble {
 .input-area {
     position: absolute;
     left: 50%;
-    bottom: 18px;
+    bottom: clamp(128px, 17vh, 220px);
     z-index: 3;
     display: flex;
-    align-items: flex-end;
-    min-height: 142px;
+    flex-direction: column;
+    align-items: center;
+    min-height: 118px;
+    padding-top: 8px;
     width: min(var(--content-width), calc(100% - 72px));
     transform: translateX(-50%);
+    transform-origin: 50% 100%;
+    pointer-events: auto;
+}
+
+.input-area::before {
+    content: "";
+    position: absolute;
+    top: -28px;
+    left: 50%;
+    width: 26px;
+    height: 34px;
+    border-radius: 52% 52% 58% 58%;
+    background:
+        radial-gradient(circle at 42% 28%, rgba(255, 255, 255, 0.94) 0 16%, transparent 17%),
+        linear-gradient(180deg, rgba(125, 220, 255, 0.92), rgba(var(--blue-rgb), 0.94) 72%, rgba(16, 88, 230, 0.90));
+    box-shadow:
+        0 0 18px rgba(var(--blue-rgb), 0.34),
+        0 0 46px rgba(125, 220, 255, 0.26);
+    opacity: 0;
+    transform: translate(-50%, -24px) scale(0.52);
+    pointer-events: none;
 }
 
 .input-wrapper {
@@ -1215,11 +1289,11 @@ body[data-appearance="dark"] .message.loading .message-bubble {
     backdrop-filter: blur(24px) saturate(1.35);
     transform-origin: 50% 100%;
     transition:
-        opacity 260ms ease,
-        transform 520ms cubic-bezier(.18, 1.2, .22, 1),
-        filter 280ms ease,
+        opacity 180ms ease,
+        transform 320ms ease,
         box-shadow 260ms ease,
         border-color 260ms ease;
+    will-change: transform;
 }
 
 body[data-appearance="dark"] .input-wrapper {
@@ -1241,21 +1315,28 @@ body[data-appearance="dark"] .input-wrapper {
 }
 
 body.input-visible:not(.composer-locked) .input-wrapper {
-    animation: composerDrop 540ms cubic-bezier(.18, 1.2, .22, 1) both;
+    animation: composerWaterSettle 520ms cubic-bezier(.18, .92, .22, 1) both;
+}
+
+body.input-hidden:not(.composer-locked) .input-area {
+    transform: translateX(-50%);
 }
 
 body.input-hidden:not(.composer-locked) .input-wrapper {
     opacity: 0;
-    filter: blur(8px);
-    transform: translateY(48px) scale(0.58);
+    transform: translateY(28px);
     pointer-events: none;
 }
 
 body.input-visible .input-wrapper,
 body.composer-locked .input-wrapper {
     opacity: 1;
-    filter: none;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+body.input-visible:not(.composer-locked) .input-area::before {
+    animation: composerDropLight 520ms cubic-bezier(.18, .92, .22, 1) both;
 }
 
 body.input-visible .input-wrapper::before,
@@ -1271,29 +1352,6 @@ body.composer-locked .input-wrapper::before {
         radial-gradient(ellipse at 78% 42%, rgba(107, 231, 178, 0.14), transparent 44%);
     filter: blur(18px);
     opacity: 0.9;
-}
-
-@keyframes composerDrop {
-    0% {
-        opacity: 0;
-        filter: blur(10px);
-        border-radius: 50% 50% 999px 999px;
-        transform: translateY(-22px) scale(0.18, 0.34);
-    }
-    48% {
-        opacity: 1;
-        filter: blur(0);
-        border-radius: 48% 48% 999px 999px;
-        transform: translateY(12px) scale(0.62, 1.12);
-    }
-    72% {
-        transform: translateY(-4px) scale(1.04, 0.96);
-    }
-    100% {
-        opacity: 1;
-        border-radius: 999px;
-        transform: translateY(0) scale(1);
-    }
 }
 
 #user-input {
@@ -1414,27 +1472,73 @@ body[data-appearance="dark"] .input-plus-btn {
 }
 
 .voice-hint {
-    margin-top: 8px;
+    width: 100%;
+    margin-top: 10px;
     color: #8b97b6;
     text-align: center;
     font-size: 12px;
+    line-height: 1.45;
     transition: opacity var(--transition), transform var(--transition);
 }
 
-body.input-hidden:not(.composer-locked) .voice-hint {
+body.input-hidden:not(.composer-locked) .voice-hint,
+body.input-hidden:not(.composer-locked) .input-wrapper::before {
     opacity: 0;
     transform: translateY(8px);
+    pointer-events: none;
+}
+
+body.input-visible .voice-hint,
+body.composer-locked .voice-hint {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+@keyframes composerDropLight {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -34px) scale(0.42);
+        filter: blur(1px);
+    }
+    28% {
+        opacity: 1;
+        transform: translate(-50%, -8px) scale(0.72, 1.08);
+        filter: blur(0);
+    }
+    66% {
+        opacity: 0.86;
+        transform: translate(-50%, 28px) scale(0.92, 0.72);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, 46px) scale(1.08, 0.28);
+    }
+}
+
+@keyframes composerWaterSettle {
+    0% {
+        opacity: 0;
+        transform: translateY(32px);
+    }
+    52% {
+        opacity: 1;
+        transform: translateY(5px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .composer-toggle {
     position: absolute;
     left: 50%;
-    bottom: 126px;
+    bottom: max(28px, env(safe-area-inset-bottom));
     z-index: 4;
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 28px;
+    width: 42px;
+    height: 32px;
     border-radius: 999px;
     color: var(--blue);
     background: rgba(255, 255, 255, 0.62);
@@ -1445,11 +1549,22 @@ body.input-hidden:not(.composer-locked) .voice-hint {
     cursor: pointer;
     transform: translateX(-50%);
     transition:
-        bottom 260ms ease,
         transform 260ms ease,
         opacity 220ms ease,
         box-shadow 220ms ease;
     animation: toggleBreathe 2.9s ease-in-out infinite;
+}
+
+.composer-toggle svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    stroke-width: 2.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    transform: translateY(-1px);
+    transition: transform 220ms ease;
 }
 
 .composer-toggle:hover {
@@ -1459,19 +1574,26 @@ body.input-hidden:not(.composer-locked) .voice-hint {
 }
 
 body.input-visible .composer-toggle {
-    bottom: 112px;
-    animation-play-state: paused;
-    transform: translateX(-50%) rotate(180deg);
+    opacity: 1;
+    animation: none;
+    transform: translateX(-50%);
+}
+
+body.input-visible .composer-toggle svg,
+body.composer-locked .composer-toggle svg {
+    transform: translateY(1px) rotate(180deg);
 }
 
 body.composer-locked .composer-toggle {
-    opacity: 0.48;
+    opacity: 0.86;
 }
 
 @keyframes toggleBreathe {
     50% {
         opacity: 0.62;
-        transform: translateX(-50%) translateY(3px);
+        box-shadow:
+            0 0 0 1px rgba(var(--blue-rgb), 0.16),
+            0 0 30px rgba(var(--blue-rgb), 0.30);
     }
 }
 
@@ -1901,7 +2023,11 @@ body[data-appearance="dark"] .sidebar-overlay {
     }
 
     .chat-messages {
-        padding: 16px 14px 170px;
+        padding: 16px 14px 80px;
+    }
+
+    .chat-main.has-messages .chat-messages {
+        padding-bottom: max(250px, calc(env(safe-area-inset-bottom) + 250px));
     }
 
     .welcome-screen {
@@ -1911,6 +2037,12 @@ body[data-appearance="dark"] .sidebar-overlay {
     .agent-stage {
         width: 184px;
         height: 184px;
+    }
+
+    .breath-field {
+        inset: 20% -210% -170% -210%;
+        background-size: 14px 14px, 20px 20px;
+        clip-path: polygon(50% 5%, 100% 34%, 100% 100%, 0 100%, 0 34%);
     }
 
     .agent-eye-hero {
@@ -1948,8 +2080,8 @@ body[data-appearance="dark"] .sidebar-overlay {
 
     .input-area {
         width: calc(100% - 32px);
-        min-height: 138px;
-        bottom: max(8px, env(safe-area-inset-bottom));
+        min-height: 116px;
+        bottom: max(84px, calc(env(safe-area-inset-bottom) + 84px));
     }
 
     .input-wrapper {
@@ -1965,15 +2097,12 @@ body[data-appearance="dark"] .sidebar-overlay {
     }
 
     .voice-hint {
-        display: none;
+        max-width: 280px;
+        font-size: 11px;
     }
 
     .composer-toggle {
-        bottom: 112px;
-    }
-
-    body.input-visible .composer-toggle {
-        bottom: 98px;
+        bottom: max(20px, calc(env(safe-area-inset-bottom) + 14px));
     }
 
     .search-toggle {

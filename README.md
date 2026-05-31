@@ -6,22 +6,33 @@ colorTo: blue
 sdk: docker
 app_port: 8000
 pinned: false
-short_description: 新闻问答、分类、情感分析与语音交互演示
+short_description: 实时新闻问答、入库去重、分类情感分析与 Fairy 智能体界面
 ---
 
 # Fairy AI News Lab
 
-一个适合课程结课展示的 Python 智能新闻助手项目，在原有新闻 RAG Agent 基础上，补上了深度学习和智能语音能力。
+Fairy 是一个 Python 智能新闻 Agent：用户询问“最新 / 最近 / 今天”的新闻时，会先联网搜索和抓取新闻源，完成数据库入库、去重、向量化、分类和情感分析，再基于最新数据回答。项目同时包含 Fairy 智能体界面、新闻 RAG、DeepSeek 总结、语音输入与语音播报，适合课程展示、作品集和 Hugging Face Spaces 部署。
+
+## 界面预览
+
+![Fairy 首页](docs/screenshots/fairy-home.png)
+
+![Fairy 新闻问答](docs/screenshots/fairy-news.png)
 
 ## 项目亮点
 
-- 新闻 RAG 检索：基于 `SentenceTransformer` 做相似度召回
-- 新闻 Agent 2.0：腾讯新闻 API + 腾讯网页解析 + Google News/BBC RSS 补源
+- 实时新闻刷新：最新、最近、今天等时效性问题会触发联网搜索和多源抓取
+- 入库去重：按标题和标准化 URL 去重，数据库已有新闻不会重复保存
+- 近三天检索：用户询问最近新闻时，优先返回近三天入库或发布时间最新的新闻
+- 查询型新闻搜索：根据用户问题动态搜索 Google News RSS，再结合通用新闻源补充
+- 新闻 RAG 检索：基于 `SentenceTransformer` 和持久化向量库做相似度召回
+- 新闻 Agent 2.0：腾讯新闻 API + 腾讯网页解析 + Google News/BBC RSS + 查询搜索补源
 - 可信度与原文增强：对新闻源打分，并按 URL 抓取原文正文补足检索上下文
 - 检索增强：持久化新闻向量库，并支持本地 cross-encoder reranker 重排候选结果
 - 新闻情感分析：支持 `正面 / 负面 / 中立` 判断
 - 新闻分类：使用自定义 `Transformer Encoder` 训练 `体育 / 科技 / 财经 / 娱乐`
 - 大模型总结：接入 `DeepSeek` 对检索结果进行归纳总结
+- Fairy 智能体界面：呼吸灯、矩阵光点、水滴输入框和响应式聊天体验
 - 语音输入：前端浏览器麦克风识别
 - Whisper 预留接口：后端支持接入 Whisper ASR
 - 语音播报：浏览器 `speechSynthesis` 自动朗读回答
@@ -96,9 +107,13 @@ NEWS_TENCENT_ENABLED=true
 NEWS_TENCENT_MAX_ITEMS=30
 NEWS_RSS_ENABLED=true
 NEWS_RSS_SUPPLEMENT_ENABLED=true
+NEWS_SEARCH_RSS_ENABLED=true
+NEWS_SEARCH_RSS_MAX_ITEMS=30
+NEWS_QUERY_REFRESH_INCLUDE_GENERAL=true
 NEWS_FETCH_ARTICLE_TEXT_ENABLED=true
 NEWS_VECTOR_STORE_ENABLED=true
 NEWS_RERANKER_ENABLED=true
+NEWS_ON_DEMAND_TRAIN_ENABLED=false
 ```
 
 ## 训练 Transformer 新闻分类模型
@@ -140,6 +155,25 @@ NEWS_RSS_ENABLED=true
 NEWS_RSS_SUPPLEMENT_ENABLED=true
 NEWS_RSS_URLS=https://example.com/news/rss,https://example.com/another/rss
 ```
+
+当用户询问“最新新闻”“最近新闻”“今天科技热点”这类带时效性的新闻问题时，Fairy 会先执行一次按问题定向的新闻刷新：
+
+- 使用用户问题生成搜索关键词，抓取 Google News Search RSS
+- 结合腾讯新闻、通用 Google News/BBC RSS 等来源补充新闻
+- 按标题和标准化 URL 去重后写入 `data/news.json`
+- 更新持久化向量库与弱监督训练数据
+- “最近”类问题优先检索近三天新闻；“近 7 天 / 近一周”类问题会自动放宽时间窗口
+
+可以通过下面的环境变量控制这个按需刷新行为：
+
+```env
+NEWS_SEARCH_RSS_ENABLED=true
+NEWS_SEARCH_RSS_MAX_ITEMS=30
+NEWS_QUERY_REFRESH_INCLUDE_GENERAL=true
+NEWS_ON_DEMAND_TRAIN_ENABLED=false
+```
+
+如果把 `NEWS_ON_DEMAND_TRAIN_ENABLED=true`，每次按需刷新新闻后都会尝试训练分类模型。课程演示或 Hugging Face Spaces 上建议保持为 `false`，避免用户提问时等待太久；后台定时训练仍可继续使用 `NEWS_AUTO_TRAIN_ENABLED=true` 控制。
 
 新闻更新时会尽量按 URL 抓取原文正文，写入 `article_text`，同时保存 `source_credibility_score`。可信度分数会参与新闻列表展示和检索重排：
 
@@ -300,9 +334,11 @@ docker compose logs -f
 - 启动时立即抓取一次新闻
 - 每 `1800` 秒，也就是每 `30` 分钟自动刷新
 - 自动更新 `data/news.json`、`data/news_embeddings.npy` 和 `data/news_vector_store.npz`
+- 用户询问最新或最近新闻时，会额外按问题联网搜索并入库去重
 - 自动为新闻补充来源可信度、URL 原文正文和来源域名
 - 自动生成弱监督训练集 `data/news_train_generated.jsonl`
 - 腾讯新闻源会优先尝试 API 和网页解析，RSS 作为补充源继续提供 Google News/BBC 等来源
+- 查询型 Google News RSS 会根据用户问题补充更贴近提问的新新闻
 - 多源新闻仍为空时，会调用 DeepSeek 兜底生成最新热点并继续保存到 `news.json`
 - 如果开启 `NEWS_AUTO_TRAIN_ENABLED=true`，新闻刷新后会自动重训 Transformer 分类模型，下一次新闻问答会热重载新模型
 - 如果部署时没有携带 `model.pt`，服务启动阶段会先自动训练一个 Transformer 权重文件
