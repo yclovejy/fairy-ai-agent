@@ -40,33 +40,45 @@
             </button>
 
             <nav class="nav-list" aria-label="Fairy 功能">
-                <button class="nav-item active" type="button">
+                <button class="nav-item active" type="button" data-sidebar-page="chat">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
                     </svg>
                     <span>对话</span>
                 </button>
-                <button class="nav-item" type="button">
+                <button class="nav-item" type="button" data-sidebar-page="explore">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <circle cx="12" cy="12" r="9"></circle>
                         <path d="m15 9-2.2 5.2L8 16l2.2-5.2z"></path>
                     </svg>
                     <span>探索</span>
                 </button>
-                <button class="nav-item" type="button">
+                <button class="nav-item" type="button" data-sidebar-page="agents">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <rect x="6" y="8" width="12" height="10" rx="3"></rect>
                         <path d="M12 4v4M9 13h.01M15 13h.01M8 20h8"></path>
                     </svg>
                     <span>智能体</span>
                 </button>
-                <button class="nav-item" type="button">
+                <button class="nav-item" type="button" data-sidebar-page="plugins">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M4 10h16v10H4zM7 10V7a5 5 0 0 1 10 0v3"></path>
                     </svg>
                     <span>插件商店</span>
                 </button>
             </nav>
+
+            <section class="agent-section" id="agent-section" aria-label="智能体" hidden>
+                <div class="agent-section-head">
+                    <span class="agent-section-kicker">AGENTS</span>
+                    <button class="sidebar-tool agent-back-btn" id="agent-back-btn" type="button" title="返回对话" aria-label="返回对话">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M15 18l-6-6 6-6"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="agent-grid" id="agent-grid"></div>
+            </section>
 
             <div class="history-section">
                 <div class="chat-history" id="chat-history" aria-label="对话历史"></div>
@@ -102,6 +114,7 @@
                         </svg>
                     </button>
                     <h1 class="chat-title">Fairy</h1>
+                    <span class="agent-mode-mark" id="agent-mode-mark" aria-hidden="true"></span>
                     <button class="title-switch" type="button" aria-label="切换工作模式">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="m6 9 6 6 6-6"></path>
@@ -143,6 +156,7 @@
                                 <div class="thinking-line"></div>
                             </div>
                         </div>
+                        <span class="agent-stage-mark" id="agent-stage-mark" aria-hidden="true"></span>
                     </div>
                     <h2>我是 Fairy，你的智能管家</h2>
                     <div class="breath-lamp" aria-hidden="true"></div>

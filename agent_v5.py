@@ -800,8 +800,57 @@ def decide_agent(query):
         return "chat"
 
 # ========= 总Agent =========
-def agent_answer(query, history):
-    intent = decide_agent(query)
+AGENT_PROFILES = {
+    "auto": {
+        "id": "auto",
+        "name": "Fairy",
+        "intent": "auto",
+        "tone": "orchestrator",
+    },
+    "news": {
+        "id": "news",
+        "name": "News Lens",
+        "intent": "news",
+        "tone": "news",
+    },
+    "weather": {
+        "id": "weather",
+        "name": "Sky Trace",
+        "intent": "weather",
+        "tone": "weather",
+    },
+    "tool": {
+        "id": "tool",
+        "name": "Calc Core",
+        "intent": "tool",
+        "tone": "tool",
+    },
+    "chat": {
+        "id": "chat",
+        "name": "Fairy Chat",
+        "intent": "chat",
+        "tone": "chat",
+    },
+}
+
+
+def get_agent_profiles():
+    return list(AGENT_PROFILES.values())
+
+
+def resolve_agent_intent(agent_id, query):
+    if not agent_id or agent_id == "auto":
+        return decide_agent(query)
+
+    profile = AGENT_PROFILES.get(safe_text(agent_id).lower())
+    if not profile:
+        return decide_agent(query)
+
+    return profile["intent"]
+
+
+def agent_answer(query, history, agent_id=None):
+    intent = resolve_agent_intent(agent_id, query)
 
     print(f"[调度] 当前任务类型: {intent}")
 
