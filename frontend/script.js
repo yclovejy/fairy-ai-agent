@@ -22,6 +22,13 @@ const sidebar = document.querySelector(".sidebar");
 const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
 const sidebarBrandToggleBtn = document.getElementById("sidebar-brand-toggle-btn");
 const sidebarOverlay = document.getElementById("sidebar-overlay");
+const navItems = document.querySelectorAll("[data-sidebar-page]");
+const historySection = document.querySelector(".history-section");
+const agentSection = document.getElementById("agent-section");
+const agentGrid = document.getElementById("agent-grid");
+const agentBackBtn = document.getElementById("agent-back-btn");
+const agentModeMark = document.getElementById("agent-mode-mark");
+const agentStageMark = document.getElementById("agent-stage-mark");
 const suggestionCards = document.querySelectorAll(".suggestion-card");
 const modelSelect = document.getElementById("model-select");
 const voiceBtn = document.getElementById("voice-btn");
@@ -34,11 +41,66 @@ const systemAppearanceQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 const API_URL = `/chat`;
 const PING_URL = `/ping`;
+const AGENTS_URL = `/agents`;
 const VOICE_CHAT_URL = `/voice/chat`;
 const CONVERSATIONS_KEY = "fairyConversations";
 const ACTIVE_CONVERSATION_KEY = "fairyActiveConversationId";
+const ACTIVE_AGENT_KEY = "fairyActiveAgentId";
 const LEGACY_CHAT_HISTORY_KEY = "chatHistory";
 const SETTINGS_KEY = "fairySettings";
+const DEFAULT_AGENT_ID = "auto";
+const AGENT_CATALOG_FALLBACK = [
+    {
+        id: "auto",
+        name: "Fairy",
+        shortName: "AUTO",
+        glyph: "orbit",
+        color: "#2768f6",
+        accent: "#7ddcff",
+        tags: ["ROUTER", "FULL"],
+        sample: "按问题自动调度"
+    },
+    {
+        id: "news",
+        name: "News Lens",
+        shortName: "NEWS",
+        glyph: "news",
+        color: "#1868f2",
+        accent: "#62e6c8",
+        tags: ["RAG", "LIVE"],
+        sample: "新闻检索与舆情分析"
+    },
+    {
+        id: "weather",
+        name: "Sky Trace",
+        shortName: "SKY",
+        glyph: "weather",
+        color: "#0f9f7a",
+        accent: "#8ce8ff",
+        tags: ["CITY", "NOW"],
+        sample: "城市天气"
+    },
+    {
+        id: "tool",
+        name: "Calc Core",
+        shortName: "CALC",
+        glyph: "tool",
+        color: "#d97706",
+        accent: "#60a5fa",
+        tags: ["MATH", "FAST"],
+        sample: "表达式计算"
+    },
+    {
+        id: "chat",
+        name: "Fairy Chat",
+        shortName: "CHAT",
+        glyph: "chat",
+        color: "#7b55f3",
+        accent: "#ff8bc7",
+        tags: ["TALK", "FLOW"],
+        sample: "日常对话"
+    },
+];
 const DEFAULT_SETTINGS = {
     theme: "blue",
     appearance: "system",
@@ -53,6 +115,8 @@ const DEFAULT_SETTINGS = {
 let chatTurns = [];
 let conversations = [];
 let activeConversationId = null;
+let activeAgentId = DEFAULT_AGENT_ID;
+let agentCatalog = [...AGENT_CATALOG_FALLBACK];
 let appSettings = { ...DEFAULT_SETTINGS };
 let isLoading = false;
 let currentModel = "default";
@@ -65,6 +129,7 @@ let composerFocused = false;
 
 function init() {
     loadSettings();
+    loadActiveAgent();
     checkBackendStatus();
 
     if (chatForm) {
@@ -106,6 +171,7 @@ function init() {
     }
 
     initSidebar();
+    initAgentPanel();
     initSettingsPanel();
     initComposerReveal();
     initVoiceRecognition();
@@ -205,6 +271,168 @@ function getContextLimit() {
 
 function getRequestHistory() {
     return chatTurns.slice(-getContextLimit());
+}
+
+function loadActiveAgent() {
+    try {
+        const saved = localStorage.getItem(ACTIVE_AGENT_KEY);
+        activeAgentId = saved || DEFAULT_AGENT_ID;
+    } catch (e) {
+        console.warn("无法加载智能体状态:", e);
+        activeAgentId = DEFAULT_AGENT_ID;
+    }
+}
+
+function persistActiveAgent() {
+    try {
+        localStorage.setItem(ACTIVE_AGENT_KEY, activeAgentId);
+    } catch (e) {
+        console.warn("无法保存智能体状态:", e);
+    }
+}
+
+function getActiveAgent() {
+    return agentCatalog.find(agent => agent.id === activeAgentId)
+        || agentCatalog.find(agent => agent.id === DEFAULT_AGENT_ID)
+        || AGENT_CATALOG_FALLBACK[0];
+}
+
+function normalizeAgentProfile(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const fallback = AGENT_CATALOG_FALLBACK.find(agent => agent.id === raw.id) || {};
+    const id = String(raw.id || fallback.id || "").trim();
+    if (!id) return null;
+    return {
+        ...fallback,
+        ...raw,
+        id,
+        name: raw.name || fallback.name || id,
+        shortName: raw.shortName || fallback.shortName || id.toUpperCase(),
+        glyph: raw.glyph || fallback.glyph || id,
+        color: raw.color || fallback.color || "#2768f6",
+        accent: raw.accent || fallback.accent || "#7ddcff",
+        tags: Array.isArray(raw.tags) ? raw.tags : (fallback.tags || []),
+        sample: raw.sample || fallback.sample || "",
+    };
+}
+
+async function fetchAgentCatalog() {
+    try {
+        const response = await fetch(AGENTS_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const profiles = Array.isArray(data.agents)
+            ? data.agents.map(normalizeAgentProfile).filter(Boolean)
+            : [];
+        const merged = AGENT_CATALOG_FALLBACK.map(fallback => {
+            return profiles.find(profile => profile.id === fallback.id) || fallback;
+        });
+        profiles.forEach(profile => {
+            if (!merged.some(agent => agent.id === profile.id)) merged.push(profile);
+        });
+        agentCatalog = merged;
+    } catch (e) {
+        console.warn("无法加载后端智能体清单，使用本地清单:", e);
+        agentCatalog = [...AGENT_CATALOG_FALLBACK];
+    }
+    if (!agentCatalog.some(agent => agent.id === activeAgentId)) {
+        activeAgentId = DEFAULT_AGENT_ID;
+        persistActiveAgent();
+    }
+    renderAgentGrid();
+    updateActiveAgentUI();
+}
+
+function getAgentIconMarkup(glyph = "orbit") {
+    const icons = {
+        orbit: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M4 12c2-5 14-5 16 0-2 5-14 5-16 0z"></path><path d="M12 4c5 2 5 14 0 16-5-2-5-14 0-16z"></path></svg>`,
+        news: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 11h14M5 16h9"></path><path d="M17 16h2"></path></svg>`,
+        weather: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3"></circle><path d="M3 8H1M8 3V1M13 8h2M10.8 5.2l1.4-1.4M5.2 5.2 3.8 3.8"></path><path d="M7 18h9a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.4 2"></path></svg>`,
+        tool: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 17h14"></path><path d="M8 4v6M16 14v6"></path><circle cx="8" cy="7" r="2"></circle><circle cx="16" cy="17" r="2"></circle></svg>`,
+        chat: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 11h10M9 16h6"></path><path d="M6 20l3-3"></path></svg>`,
+    };
+    return icons[glyph] || icons.orbit;
+}
+
+function renderAgentGrid() {
+    if (!agentGrid) return;
+    agentGrid.innerHTML = "";
+    agentCatalog.forEach(agent => {
+        const button = document.createElement("button");
+        button.className = "agent-card";
+        button.type = "button";
+        button.dataset.agentId = agent.id;
+        button.style.setProperty("--agent-color", agent.color);
+        button.style.setProperty("--agent-accent", agent.accent);
+        button.classList.toggle("active", agent.id === activeAgentId);
+        button.setAttribute("aria-pressed", String(agent.id === activeAgentId));
+        button.innerHTML = `
+            <span class="agent-card-icon">${getAgentIconMarkup(agent.glyph)}</span>
+            <span class="agent-card-body">
+                <strong>${escapeHtml(agent.name)}</strong>
+                <span class="agent-card-sample">${escapeHtml(agent.sample || agent.shortName)}</span>
+                <span class="agent-card-tags">${(agent.tags || []).map(tag => `<small>${escapeHtml(tag)}</small>`).join("")}</span>
+            </span>
+            <span class="agent-card-signal" aria-hidden="true"></span>
+        `;
+        button.addEventListener("click", () => selectAgent(agent.id));
+        agentGrid.appendChild(button);
+    });
+}
+
+function initAgentPanel() {
+    navItems.forEach(item => {
+        item.addEventListener("click", () => {
+            const page = item.dataset.sidebarPage || "chat";
+            setSidebarPage(page);
+        });
+    });
+    agentBackBtn?.addEventListener("click", () => setSidebarPage("chat"));
+    fetchAgentCatalog();
+}
+
+function setSidebarPage(page) {
+    const targetPage = page === "agents" ? "agents" : "chat";
+    navItems.forEach(item => {
+        item.classList.toggle("active", (item.dataset.sidebarPage || "chat") === targetPage);
+    });
+    if (agentSection) agentSection.hidden = targetPage !== "agents";
+    if (historySection) historySection.hidden = targetPage === "agents";
+    sidebar?.classList.toggle("agent-page-open", targetPage === "agents");
+}
+
+function selectAgent(agentId) {
+    if (!agentCatalog.some(agent => agent.id === agentId)) return;
+    activeAgentId = agentId;
+    persistActiveAgent();
+
+    const conversation = getActiveConversation();
+    if (conversation) {
+        conversation.agentId = activeAgentId;
+        saveActiveConversation();
+    }
+
+    renderAgentGrid();
+    updateActiveAgentUI();
+    closeSidebar();
+}
+
+function updateActiveAgentUI() {
+    const agent = getActiveAgent();
+    const isAuto = agent.id === DEFAULT_AGENT_ID;
+    document.body.dataset.agent = agent.id;
+    [agentModeMark, agentStageMark].filter(Boolean).forEach(mark => {
+        mark.hidden = isAuto;
+        mark.style.setProperty("--agent-color", agent.color);
+        mark.style.setProperty("--agent-accent", agent.accent);
+        mark.innerHTML = getAgentIconMarkup(agent.glyph);
+        mark.title = agent.name;
+    });
+    document.querySelectorAll(".agent-card").forEach(card => {
+        const active = card.dataset.agentId === agent.id;
+        card.classList.toggle("active", active);
+        card.setAttribute("aria-pressed", String(active));
+    });
 }
 
 function trimChatTurnsForStorage() {
@@ -337,6 +565,7 @@ function createConversation(firstMessage = "") {
         createdAt: now,
         updatedAt: now,
         model: currentModel,
+        agentId: activeAgentId,
     };
 }
 
@@ -353,6 +582,7 @@ function normalizeConversation(raw) {
         createdAt,
         updatedAt,
         model: raw.model || "default",
+        agentId: raw.agentId || DEFAULT_AGENT_ID,
     };
 }
 
@@ -402,6 +632,7 @@ function saveActiveConversation(options = {}) {
 
     conversation.turns = normalizeTurns(chatTurns);
     conversation.model = currentModel;
+    conversation.agentId = activeAgentId;
     if (touch) {
         conversation.updatedAt = new Date().toISOString();
     }
@@ -518,6 +749,9 @@ function loadConversation(conversationId) {
     closeSidebar();
     activeConversationId = conversation.id;
     currentModel = conversation.model || currentModel;
+    activeAgentId = conversation.agentId || DEFAULT_AGENT_ID;
+    persistActiveAgent();
+    updateActiveAgentUI();
     if (modelSelect) {
         modelSelect.value = currentModel;
     }
@@ -595,6 +829,7 @@ async function submitMessage(message) {
                 query: message,
                 history: getRequestHistory(),
                 model: currentModel,
+                agent_id: activeAgentId,
                 preferences: {
                     responseStyle: appSettings.responseStyle,
                     webSearch: appSettings.webSearchDefault,
@@ -662,6 +897,7 @@ async function sendVoiceMessage(transcript) {
         const formData = new FormData();
         formData.append("transcript", transcript);
         formData.append("history", JSON.stringify(getRequestHistory()));
+        formData.append("agent_id", activeAgentId);
 
         const response = await fetch(VOICE_CHAT_URL, {
             method: "POST",

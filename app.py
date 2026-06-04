@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from agent_v5 import agent_answer  # V5版Agent
+from agent_v5 import agent_answer, get_agent_profiles  # V5版Agent
 from news_intelligence import NewsIntelligenceService
 from scheduler import start_background_scheduler
 from transformer_bootstrap import ensure_news_transformer_model
@@ -91,6 +91,7 @@ class Query(BaseModel):
     query: str
     history: list = Field(default_factory=list)
     model: str | None = None
+    agent_id: str | None = None
 
 class NewsArticle(BaseModel):
     title: str = ""
@@ -106,8 +107,13 @@ def strip_for_tts(text: str) -> str:
 
 @app.post("/chat")
 def chat_endpoint(q: Query):
-    answer = agent_answer(q.query, q.history)
-    return {"answer": answer}
+    answer = agent_answer(q.query, q.history, q.agent_id)
+    return {"answer": answer, "agent_id": q.agent_id or "auto"}
+
+
+@app.get("/agents")
+def list_agents():
+    return {"agents": get_agent_profiles()}
 
 @app.post("/news/analyze")
 def analyze_news(article: NewsArticle):
@@ -137,6 +143,7 @@ def analyze_news(article: NewsArticle):
 async def voice_chat(
     transcript: str = Form(default=""),
     history: str = Form(default="[]"),
+    agent_id: str = Form(default="auto"),
     audio: UploadFile | None = File(default=None),
 ):
     parsed_history = []
@@ -162,10 +169,11 @@ async def voice_chat(
     if not final_transcript:
         raise HTTPException(status_code=400, detail="没有收到可识别的语音或文本。")
 
-    answer = agent_answer(final_transcript, parsed_history)
+    answer = agent_answer(final_transcript, parsed_history, agent_id)
     return {
         "transcript": final_transcript,
         "answer": answer,
+        "agent_id": agent_id or "auto",
         "tts_text": strip_for_tts(answer),
         "asr_provider": asr_provider,
     }

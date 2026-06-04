@@ -40,6 +40,10 @@
     padding: 0;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 html,
 body {
     height: 100%;
@@ -326,6 +330,157 @@ body.settings-open {
     color: var(--blue);
 }
 
+.agent-section {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 20px 20px;
+}
+
+.agent-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 42px;
+    margin-bottom: 10px;
+}
+
+.agent-section-kicker {
+    color: #8795b6;
+    font-size: 12px;
+    font-weight: 780;
+    letter-spacing: 0;
+}
+
+.agent-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.agent-card {
+    --agent-color: var(--blue);
+    --agent-accent: var(--aura-cyan);
+    position: relative;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) 10px;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 88px;
+    padding: 12px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    color: #1f2b48;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 255, 0.70));
+    box-shadow: 0 10px 26px rgba(58, 83, 142, 0.07);
+    text-align: left;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.agent-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(90deg, color-mix(in srgb, var(--agent-color) 14%, transparent), transparent 48%),
+        radial-gradient(circle at 16% 50%, color-mix(in srgb, var(--agent-accent) 22%, transparent), transparent 32%);
+    opacity: 0;
+    transition: var(--transition);
+}
+
+.agent-card:hover,
+.agent-card.active {
+    border-color: color-mix(in srgb, var(--agent-color) 34%, var(--line));
+    transform: translateY(-1px);
+    box-shadow: 0 16px 36px color-mix(in srgb, var(--agent-color) 15%, transparent);
+}
+
+.agent-card:hover::before,
+.agent-card.active::before {
+    opacity: 1;
+}
+
+.agent-card-icon,
+.agent-card-body,
+.agent-card-signal {
+    position: relative;
+    z-index: 1;
+}
+
+.agent-card-icon {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    color: var(--agent-color);
+    background:
+        radial-gradient(circle at 74% 22%, color-mix(in srgb, var(--agent-accent) 48%, white), transparent 28%),
+        color-mix(in srgb, var(--agent-color) 10%, white);
+}
+
+.agent-card-icon svg {
+    width: 23px;
+    height: 23px;
+}
+
+.agent-card-body {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.agent-card-body strong {
+    overflow: hidden;
+    color: #16213b;
+    font-size: 15px;
+    font-weight: 780;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-card-sample {
+    overflow: hidden;
+    color: #6f7d9d;
+    font-size: 12px;
+    font-weight: 620;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.agent-card-tags small {
+    min-width: 0;
+    padding: 2px 6px;
+    border-radius: 7px;
+    color: color-mix(in srgb, var(--agent-color) 72%, #1d2945);
+    background: color-mix(in srgb, var(--agent-color) 10%, white);
+    font-size: 10px;
+    font-weight: 780;
+}
+
+.agent-card-signal {
+    width: 8px;
+    height: 44px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, transparent, var(--agent-color), var(--agent-accent), transparent);
+    opacity: 0.22;
+}
+
+.agent-card.active .agent-card-signal {
+    opacity: 1;
+    box-shadow: 0 0 18px color-mix(in srgb, var(--agent-color) 48%, transparent);
+}
+
 .history-section {
     flex: 1;
     overflow-y: auto;
@@ -448,6 +603,10 @@ body.settings-open {
     font-weight: 760;
 }
 
+.sidebar.agent-page-open .profile-card {
+    display: none;
+}
+
 .chat-main {
     position: relative;
     flex: 1;
@@ -550,6 +709,88 @@ body.input-visible .chat-main::before {
 .chat-title {
     font-size: 22px;
     font-weight: 780;
+}
+
+.agent-mode-mark,
+.agent-stage-mark {
+    --agent-color: var(--blue);
+    --agent-accent: var(--aura-cyan);
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    color: #ffffff;
+    background:
+        radial-gradient(circle at 70% 24%, color-mix(in srgb, var(--agent-accent) 72%, white), transparent 25%),
+        linear-gradient(145deg, var(--agent-color), color-mix(in srgb, var(--agent-accent) 58%, var(--agent-color)));
+    box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--agent-color) 18%, transparent),
+        0 12px 32px color-mix(in srgb, var(--agent-color) 24%, transparent);
+}
+
+.agent-mode-mark {
+    width: 34px;
+    height: 34px;
+    margin-left: 6px;
+    border-radius: 12px;
+}
+
+.agent-mode-mark svg {
+    width: 19px;
+    height: 19px;
+    stroke-width: 2.2;
+}
+
+.agent-stage-mark {
+    position: absolute;
+    right: 18px;
+    bottom: 26px;
+    width: 52px;
+    height: 52px;
+    border: 1px solid rgba(255, 255, 255, 0.52);
+    border-radius: 17px;
+    animation: modeMarkFloat 4.8s ease-in-out infinite;
+}
+
+.agent-stage-mark svg {
+    width: 27px;
+    height: 27px;
+}
+
+body[data-agent="news"] .eye-shell {
+    background:
+        radial-gradient(circle at 30% 28%, rgba(98, 230, 200, 0.92), transparent 19%),
+        radial-gradient(circle at 70% 75%, rgba(17, 96, 218, 0.84), transparent 26%),
+        conic-gradient(from 210deg, #0a57df, #62e6c8, #115fe7, #074a9f, #0a57df);
+}
+
+body[data-agent="weather"] .eye-shell {
+    background:
+        radial-gradient(circle at 30% 28%, rgba(140, 232, 255, 0.96), transparent 19%),
+        radial-gradient(circle at 70% 75%, rgba(15, 159, 122, 0.86), transparent 26%),
+        conic-gradient(from 210deg, #08745a, #8ce8ff, #0f9f7a, #075f4a, #08745a);
+}
+
+body[data-agent="tool"] .eye-shell {
+    background:
+        radial-gradient(circle at 30% 28%, rgba(251, 191, 36, 0.94), transparent 19%),
+        radial-gradient(circle at 70% 75%, rgba(37, 99, 235, 0.80), transparent 26%),
+        conic-gradient(from 210deg, #b45309, #60a5fa, #d97706, #92400e, #b45309);
+}
+
+body[data-agent="chat"] .eye-shell {
+    background:
+        radial-gradient(circle at 30% 28%, rgba(255, 139, 199, 0.88), transparent 19%),
+        radial-gradient(circle at 70% 75%, rgba(123, 85, 243, 0.84), transparent 26%),
+        conic-gradient(from 210deg, #5f39d5, #ff8bc7, #7b55f3, #3b2b91, #5f39d5);
+}
+
+@keyframes modeMarkFloat {
+    50% {
+        transform: translateY(-5px) rotate(3deg);
+        box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--agent-color) 20%, transparent),
+            0 18px 44px color-mix(in srgb, var(--agent-color) 32%, transparent);
+    }
 }
 
 .status-badge {
@@ -1859,6 +2100,7 @@ body[data-appearance="dark"] .settings-panel {
 
 body[data-appearance="dark"] .new-chat-btn,
 body[data-appearance="dark"] .profile-card,
+body[data-appearance="dark"] .agent-card,
 body[data-appearance="dark"] .mobile-menu-btn,
 body[data-appearance="dark"] .icon-btn,
 body[data-appearance="dark"] .suggestion-card,
@@ -1871,6 +2113,7 @@ body[data-appearance="dark"] .settings-select {
 }
 
 body[data-appearance="dark"] .nav-item,
+body[data-appearance="dark"] .agent-card-body strong,
 body[data-appearance="dark"] .history-item,
 body[data-appearance="dark"] .show-all-btn,
 body[data-appearance="dark"] .setting-row strong,
@@ -1881,6 +2124,8 @@ body[data-appearance="dark"] .brand-row strong {
 }
 
 body[data-appearance="dark"] .history-label,
+body[data-appearance="dark"] .agent-section-kicker,
+body[data-appearance="dark"] .agent-card-sample,
 body[data-appearance="dark"] .setting-row span,
 body[data-appearance="dark"] .voice-hint,
 body[data-appearance="dark"] #user-input::placeholder {
