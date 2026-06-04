@@ -126,6 +126,9 @@ let speechSynthesisEnabled = "speechSynthesis" in window;
 let composerPinned = false;
 let composerHovered = false;
 let composerFocused = false;
+let lastComposerVisible = null;
+let lastComposerLocked = null;
+let composerStateFrame = null;
 
 function init() {
     loadSettings();
@@ -1070,12 +1073,20 @@ function focusComposerInput() {
     }
 }
 
+function shouldAutoFocusComposer() {
+    return !window.matchMedia("(max-width: 768px)").matches;
+}
+
 function updateComposerState() {
     const locked = false;
     const visible = shouldShowComposer();
-    document.body.classList.toggle("composer-locked", locked);
-    document.body.classList.toggle("input-visible", visible);
-    document.body.classList.toggle("input-hidden", !visible);
+    if (visible !== lastComposerVisible || locked !== lastComposerLocked) {
+        document.body.classList.toggle("composer-locked", locked);
+        document.body.classList.toggle("input-visible", visible);
+        document.body.classList.toggle("input-hidden", !visible);
+        lastComposerVisible = visible;
+        lastComposerLocked = locked;
+    }
     if (composerToggle) {
         composerToggle.setAttribute("aria-pressed", String(visible));
         composerToggle.setAttribute("aria-label", visible ? "隐藏输入框" : "显示输入框");
@@ -1083,27 +1094,35 @@ function updateComposerState() {
     }
 }
 
+function scheduleComposerStateUpdate() {
+    if (composerStateFrame !== null) return;
+    composerStateFrame = window.requestAnimationFrame(() => {
+        composerStateFrame = null;
+        updateComposerState();
+    });
+}
+
 function initComposerReveal() {
     updateComposerState();
 
     inputArea?.addEventListener("mouseenter", () => {
         composerHovered = true;
-        updateComposerState();
+        scheduleComposerStateUpdate();
     });
 
     inputArea?.addEventListener("mouseleave", () => {
         composerHovered = false;
-        updateComposerState();
+        scheduleComposerStateUpdate();
     });
 
     userInput?.addEventListener("focus", () => {
         composerFocused = true;
-        updateComposerState();
+        scheduleComposerStateUpdate();
     });
 
     userInput?.addEventListener("blur", () => {
         composerFocused = false;
-        updateComposerState();
+        scheduleComposerStateUpdate();
     });
 
     composerToggle?.addEventListener("click", () => {
@@ -1113,8 +1132,8 @@ function initComposerReveal() {
         } else {
             composerHovered = false;
         }
-        updateComposerState();
-        if (composerPinned) {
+        scheduleComposerStateUpdate();
+        if (composerPinned && shouldAutoFocusComposer()) {
             window.setTimeout(focusComposerInput, 120);
         } else {
             userInput?.blur();
