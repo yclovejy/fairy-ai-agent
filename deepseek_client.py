@@ -25,6 +25,7 @@ class DeepSeekClient:
         messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 1024,
+        model: str | None = None,
     ) -> str:
         if not self.api_key:
             raise RuntimeError("未配置 DEEPSEEK_API_KEY。")
@@ -36,7 +37,7 @@ class DeepSeekClient:
                 "Content-Type": "application/json",
             },
             json={
-                "model": self.model,
+                "model": model or self.model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,

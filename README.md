@@ -15,9 +15,9 @@ Fairy 是一个 Python 智能新闻 Agent：用户询问“最新 / 最近 / 今
 
 ## 界面预览
 
-![Fairy 首页](https://raw.githubusercontent.com/yclovejy/fairy-ai-agent/main/docs/screenshots/fairy-home.png)
+![Fairy 首页](docs/screenshots/fairy-home.png)
 
-![Fairy 新闻问答](https://raw.githubusercontent.com/yclovejy/fairy-ai-agent/main/docs/screenshots/fairy-news.png)
+![Fairy 新闻问答](docs/screenshots/fairy-news.png)
 
 ## 项目亮点
 
