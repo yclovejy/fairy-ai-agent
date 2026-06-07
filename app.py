@@ -17,6 +17,8 @@ from voice_service import whisper_service
 
 app = FastAPI()
 news_service = NewsIntelligenceService()
+SUPPORTED_MODELS = {"deepseek-v4-flash", "deepseek-v4-pro"}
+DEFAULT_MODEL = "deepseek-v4-flash"
 
 
 @app.on_event("startup")
@@ -105,10 +107,16 @@ def strip_for_tts(text: str) -> str:
     return cleaned.strip()
 
 
+def resolve_model(model: str | None) -> str:
+    selected = (model or DEFAULT_MODEL).strip().lower()
+    return selected if selected in SUPPORTED_MODELS else DEFAULT_MODEL
+
+
 @app.post("/chat")
 def chat_endpoint(q: Query):
-    answer = agent_answer(q.query, q.history, q.agent_id)
-    return {"answer": answer, "agent_id": q.agent_id or "auto"}
+    model = resolve_model(q.model)
+    answer = agent_answer(q.query, q.history, q.agent_id, model)
+    return {"answer": answer, "agent_id": q.agent_id or "auto", "model": model}
 
 
 @app.get("/agents")
@@ -144,6 +152,7 @@ async def voice_chat(
     transcript: str = Form(default=""),
     history: str = Form(default="[]"),
     agent_id: str = Form(default="auto"),
+    model: str = Form(default=DEFAULT_MODEL),
     audio: UploadFile | None = File(default=None),
 ):
     parsed_history = []
@@ -169,11 +178,13 @@ async def voice_chat(
     if not final_transcript:
         raise HTTPException(status_code=400, detail="没有收到可识别的语音或文本。")
 
-    answer = agent_answer(final_transcript, parsed_history, agent_id)
+    selected_model = resolve_model(model)
+    answer = agent_answer(final_transcript, parsed_history, agent_id, selected_model)
     return {
         "transcript": final_transcript,
         "answer": answer,
         "agent_id": agent_id or "auto",
+        "model": selected_model,
         "tts_text": strip_for_tts(answer),
         "asr_provider": asr_provider,
     }

@@ -90,18 +90,6 @@
                 </button>
             </div>
 
-            <div class="profile-card">
-                <div class="profile-avatar" aria-hidden="true"></div>
-                <div>
-                    <strong>StarDust</strong>
-                    <span>Pro</span>
-                </div>
-                <button class="profile-menu" type="button" aria-label="更多账号选项">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M12 6h.01M12 12h.01M12 18h.01"></path>
-                    </svg>
-                </button>
-            </div>
         </aside>
 
         <main class="chat-main">
@@ -114,12 +102,26 @@
                         </svg>
                     </button>
                     <h1 class="chat-title">Fairy</h1>
+                    <div class="model-switcher">
+                        <button class="title-switch" id="model-menu-btn" type="button" aria-label="切换 Fairy 模型" aria-haspopup="menu" aria-expanded="false">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="m6 9 6 6 6-6"></path>
+                            </svg>
+                        </button>
+                        <div class="model-menu" id="model-menu" role="menu" hidden>
+                            <button type="button" role="menuitemradio" data-model="deepseek-v4-flash" aria-checked="true">
+                                <span class="model-glyph flash" aria-hidden="true"></span>
+                                <strong>fairy-fast</strong>
+                                <span class="model-check" aria-hidden="true"></span>
+                            </button>
+                            <button type="button" role="menuitemradio" data-model="deepseek-v4-pro" aria-checked="false">
+                                <span class="model-glyph pro" aria-hidden="true"></span>
+                                <strong>fairy-pro</strong>
+                                <span class="model-check" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                    </div>
                     <span class="agent-mode-mark" id="agent-mode-mark" aria-hidden="true"></span>
-                    <button class="title-switch" type="button" aria-label="切换工作模式">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="m6 9 6 6 6-6"></path>
-                        </svg>
-                    </button>
                     <span class="status-badge" id="status-badge">
                         <span class="status-dot online"></span>
                         在线
@@ -238,6 +240,22 @@
             </div>
 
             <div class="settings-body">
+                <section class="settings-section account-section">
+                    <h3>账户</h3>
+                    <div class="profile-card account-settings-card">
+                        <div class="profile-avatar" aria-hidden="true"></div>
+                        <div class="profile-identity">
+                            <strong>StarDust</strong>
+                            <span>Pro</span>
+                        </div>
+                        <button class="profile-menu" type="button" aria-label="更多账号选项">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 6h.01M12 12h.01M12 18h.01"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </section>
+
                 <section class="settings-section">
                     <h3>外观</h3>
                     <div class="setting-row vertical">

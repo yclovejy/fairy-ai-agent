@@ -30,7 +30,9 @@ const agentBackBtn = document.getElementById("agent-back-btn");
 const agentModeMark = document.getElementById("agent-mode-mark");
 const agentStageMark = document.getElementById("agent-stage-mark");
 const suggestionCards = document.querySelectorAll(".suggestion-card");
-const modelSelect = document.getElementById("model-select");
+const modelMenuBtn = document.getElementById("model-menu-btn");
+const modelMenu = document.getElementById("model-menu");
+const modelOptions = document.querySelectorAll("[data-model]");
 const voiceBtn = document.getElementById("voice-btn");
 const voiceHint = document.getElementById("voice-hint");
 const searchToggle = document.querySelector(".search-toggle");
@@ -46,9 +48,12 @@ const VOICE_CHAT_URL = `/voice/chat`;
 const CONVERSATIONS_KEY = "fairyConversations";
 const ACTIVE_CONVERSATION_KEY = "fairyActiveConversationId";
 const ACTIVE_AGENT_KEY = "fairyActiveAgentId";
+const ACTIVE_MODEL_KEY = "fairyActiveModel";
 const LEGACY_CHAT_HISTORY_KEY = "chatHistory";
 const SETTINGS_KEY = "fairySettings";
 const DEFAULT_AGENT_ID = "auto";
+const DEFAULT_MODEL = "deepseek-v4-flash";
+const SUPPORTED_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"]);
 const AGENT_CATALOG_FALLBACK = [
     {
         id: "auto",
@@ -100,6 +105,16 @@ const AGENT_CATALOG_FALLBACK = [
         tags: ["TALK", "FLOW"],
         sample: "日常对话"
     },
+    {
+        id: "travel",
+        name: "Geo Voyage",
+        shortName: "GEO",
+        glyph: "travel",
+        color: "#e05a47",
+        accent: "#27b8a2",
+        tags: ["PLACE", "LOCAL"],
+        sample: "地名解析与旅游问答"
+    },
 ];
 const DEFAULT_SETTINGS = {
     theme: "blue",
@@ -119,7 +134,7 @@ let activeAgentId = DEFAULT_AGENT_ID;
 let agentCatalog = [...AGENT_CATALOG_FALLBACK];
 let appSettings = { ...DEFAULT_SETTINGS };
 let isLoading = false;
-let currentModel = "default";
+let currentModel = DEFAULT_MODEL;
 let recognition = null;
 let isRecording = false;
 let speechSynthesisEnabled = "speechSynthesis" in window;
@@ -129,10 +144,13 @@ let composerFocused = false;
 let lastComposerVisible = null;
 let lastComposerLocked = null;
 let composerStateFrame = null;
+let viewportStateFrame = null;
 
 function init() {
+    initViewportSizing();
     loadSettings();
     loadActiveAgent();
+    loadActiveModel();
     checkBackendStatus();
 
     if (chatForm) {
@@ -162,25 +180,43 @@ function init() {
         });
     });
 
-    if (modelSelect) {
-        modelSelect.addEventListener("change", (e) => {
-            currentModel = e.target.value;
-            const conversation = getActiveConversation();
-            if (conversation) {
-                conversation.model = currentModel;
-                persistConversations();
-            }
-        });
-    }
-
     initSidebar();
     initAgentPanel();
+    initModelMenu();
     initSettingsPanel();
     initComposerReveal();
     initVoiceRecognition();
 
     loadChatHistory();
     updateComposerState();
+}
+
+function initViewportSizing() {
+    const syncHeight = () => {
+        viewportStateFrame = null;
+        if (!sidebarMediaQuery.matches) {
+            document.documentElement.style.removeProperty("--app-height");
+            return;
+        }
+        const viewportHeight = window.visualViewport?.height || window.innerHeight;
+        if (viewportHeight > 0) {
+            document.documentElement.style.setProperty("--app-height", `${Math.round(viewportHeight)}px`);
+        }
+    };
+
+    const scheduleSync = () => {
+        if (viewportStateFrame !== null) return;
+        viewportStateFrame = window.requestAnimationFrame(syncHeight);
+    };
+
+    syncHeight();
+    window.addEventListener("resize", scheduleSync, { passive: true });
+    window.addEventListener("orientationchange", scheduleSync, { passive: true });
+    window.visualViewport?.addEventListener("resize", scheduleSync, { passive: true });
+    window.visualViewport?.addEventListener("scroll", scheduleSync, { passive: true });
+    if (typeof sidebarMediaQuery.addEventListener === "function") {
+        sidebarMediaQuery.addEventListener("change", scheduleSync);
+    }
 }
 
 function autoResize() {
@@ -294,6 +330,77 @@ function persistActiveAgent() {
     }
 }
 
+function loadActiveModel() {
+    try {
+        const saved = localStorage.getItem(ACTIVE_MODEL_KEY);
+        currentModel = SUPPORTED_MODELS.has(saved) ? saved : DEFAULT_MODEL;
+    } catch (e) {
+        console.warn("无法加载模型状态:", e);
+        currentModel = DEFAULT_MODEL;
+    }
+}
+
+function persistActiveModel() {
+    try {
+        localStorage.setItem(ACTIVE_MODEL_KEY, currentModel);
+    } catch (e) {
+        console.warn("无法保存模型状态:", e);
+    }
+}
+
+function initModelMenu() {
+    if (!modelMenuBtn || !modelMenu) return;
+
+    modelMenuBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setModelMenuOpen(modelMenu.hidden);
+    });
+    modelOptions.forEach(option => {
+        option.addEventListener("click", () => {
+            setActiveModel(option.dataset.model);
+            setModelMenuOpen(false);
+        });
+    });
+    document.addEventListener("click", (event) => {
+        if (!event.target.closest(".model-switcher")) setModelMenuOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") setModelMenuOpen(false);
+    });
+    syncModelMenu();
+}
+
+function setModelMenuOpen(open) {
+    if (!modelMenu || !modelMenuBtn) return;
+    modelMenu.hidden = !open;
+    modelMenuBtn.classList.toggle("active", open);
+    modelMenuBtn.setAttribute("aria-expanded", String(open));
+}
+
+function setActiveModel(model) {
+    if (!SUPPORTED_MODELS.has(model)) return;
+    currentModel = model;
+    persistActiveModel();
+    const conversation = getActiveConversation();
+    if (conversation) {
+        conversation.model = currentModel;
+        persistConversations();
+    }
+    syncModelMenu();
+}
+
+function syncModelMenu() {
+    modelOptions.forEach(option => {
+        const active = option.dataset.model === currentModel;
+        option.classList.toggle("active", active);
+        option.setAttribute("aria-checked", String(active));
+    });
+    modelMenuBtn?.setAttribute(
+        "title",
+        currentModel === "deepseek-v4-pro" ? "fairy-pro" : "fairy-fast"
+    );
+}
+
 function getActiveAgent() {
     return agentCatalog.find(agent => agent.id === activeAgentId)
         || agentCatalog.find(agent => agent.id === DEFAULT_AGENT_ID)
@@ -353,6 +460,7 @@ function getAgentIconMarkup(glyph = "orbit") {
         weather: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3"></circle><path d="M3 8H1M8 3V1M13 8h2M10.8 5.2l1.4-1.4M5.2 5.2 3.8 3.8"></path><path d="M7 18h9a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.4 2"></path></svg>`,
         tool: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 17h14"></path><path d="M8 4v6M16 14v6"></path><circle cx="8" cy="7" r="2"></circle><circle cx="16" cy="17" r="2"></circle></svg>`,
         chat: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 11h10M9 16h6"></path><path d="M6 20l3-3"></path></svg>`,
+        travel: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20z"></path><path d="M9 4v13.5M15 6.5V20"></path><circle cx="15" cy="11" r="1.6"></circle></svg>`,
     };
     return icons[glyph] || icons.orbit;
 }
@@ -424,6 +532,8 @@ function updateActiveAgentUI() {
     const agent = getActiveAgent();
     const isAuto = agent.id === DEFAULT_AGENT_ID;
     document.body.dataset.agent = agent.id;
+    document.body.style.setProperty("--active-agent-color", agent.color);
+    document.body.style.setProperty("--active-agent-accent", agent.accent);
     [agentModeMark, agentStageMark].filter(Boolean).forEach(mark => {
         mark.hidden = isAuto;
         mark.style.setProperty("--agent-color", agent.color);
@@ -584,7 +694,7 @@ function normalizeConversation(raw) {
         turns,
         createdAt,
         updatedAt,
-        model: raw.model || "default",
+        model: SUPPORTED_MODELS.has(raw.model) ? raw.model : DEFAULT_MODEL,
         agentId: raw.agentId || DEFAULT_AGENT_ID,
     };
 }
@@ -752,12 +862,12 @@ function loadConversation(conversationId) {
     closeSidebar();
     activeConversationId = conversation.id;
     currentModel = conversation.model || currentModel;
+    if (!SUPPORTED_MODELS.has(currentModel)) currentModel = DEFAULT_MODEL;
+    persistActiveModel();
     activeAgentId = conversation.agentId || DEFAULT_AGENT_ID;
     persistActiveAgent();
     updateActiveAgentUI();
-    if (modelSelect) {
-        modelSelect.value = currentModel;
-    }
+    syncModelMenu();
     chatTurns = normalizeTurns(conversation.turns);
     persistConversations();
     renderConversationHistory();
@@ -901,6 +1011,7 @@ async function sendVoiceMessage(transcript) {
         formData.append("transcript", transcript);
         formData.append("history", JSON.stringify(getRequestHistory()));
         formData.append("agent_id", activeAgentId);
+        formData.append("model", currentModel);
 
         const response = await fetch(VOICE_CHAT_URL, {
             method: "POST",
@@ -1333,10 +1444,11 @@ function loadChatHistory() {
         const activeConversation = getActiveConversation();
         chatTurns = activeConversation ? normalizeTurns(activeConversation.turns) : [];
         if (activeConversation?.model) {
-            currentModel = activeConversation.model;
-            if (modelSelect) {
-                modelSelect.value = currentModel;
-            }
+            currentModel = SUPPORTED_MODELS.has(activeConversation.model)
+                ? activeConversation.model
+                : DEFAULT_MODEL;
+            persistActiveModel();
+            syncModelMenu();
         }
     } catch (e) {
         console.warn("无法加载对话列表:", e);

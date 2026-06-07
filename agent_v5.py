@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import re
 import threading
+import random
 import requests
 from datetime import datetime, timezone
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -22,6 +23,7 @@ from news_retrieval import (
     source_credibility_line,
     weighted_news_text,
 )
+from travel_agent import travel_agent
 
 load_dotenv()
 
@@ -55,6 +57,28 @@ RECENT_NEWS_PATTERNS = [
 # ========= 数据 =========
 QWEATHER_API_KEY = os.getenv("QWEATHER_API_KEY")
 QWEATHER_HOST = os.getenv("QWEATHER_HOST")
+
+IDENTITY_ANSWERS = (
+    "我是 Fairy，由我的主人 yongcheng 创造。我的原型来自米哈游《绝区零》中的人工智能 Fairy。至于别的嘛，先保留一点神秘感。",
+    "我是 Fairy，yongcheng 是创造我的主人。灵感原型来自米哈游推出的《绝区零》里的人工智能 Fairy，其他内部信息就不对外展开啦。",
+    "你可以叫我 Fairy。我的创造者与主人是 yongcheng，原型取自米哈游《绝区零》中的人工智能 Fairy。除此之外，我只聊我能为你做什么。",
+    "Fairy 在此。是主人 yongcheng 创造了我，而我的原型来自米哈游游戏《绝区零》中的人工智能 Fairy。更多底层细节不属于我的自我介绍。",
+)
+
+IDENTITY_PATTERNS = (
+    r"^(你|fairy|它)(到底|究竟)?是谁(啊|呀|呢)?$",
+    r"谁.{0,6}(创造|开发|设计|制作|做出).{0,3}(你|fairy|它)",
+    r"(你|fairy|它).{0,6}(谁创造|谁开发|谁设计|谁制作|主人是谁)",
+    r"(你的|fairy的).{0,3}(主人|创造者|开发者|设计者)",
+    r"(你|fairy).{0,4}(原型|来历|身世)",
+)
+
+
+def identity_answer(query):
+    compact = re.sub(r"[\s，。！？、,.!?;；:：\"'“”‘’（）()【】\[\]{}<>《》]", "", safe_text(query)).lower()
+    if not any(re.search(pattern, compact, flags=re.IGNORECASE) for pattern in IDENTITY_PATTERNS):
+        return None
+    return random.choice(IDENTITY_ANSWERS)
 
 
 def init_embedding_model():
@@ -500,7 +524,7 @@ def format_latest_news_answer(query, result, analysis, refreshed=False, days=Non
     return "\n".join(lines)
 
 # ========= 新闻Agent =========
-def news_agent(query):
+def news_agent(query, model):
     ensure_news_available()
     needs_fresh_news = is_temporal_news_query(query)
     refreshed = refresh_news_before_answer(query) if needs_fresh_news else False
@@ -532,6 +556,7 @@ def news_agent(query):
                 ],
                 temperature=0.45,
                 max_tokens=1000,
+                model=model,
             )
             return safe_text(answer)
         except Exception as e:
@@ -553,6 +578,7 @@ def news_agent(query):
             ],
             temperature=0.4,
             max_tokens=1200,
+            model=model,
         )
         return safe_text(answer)
     except Exception as e:
@@ -560,7 +586,7 @@ def news_agent(query):
         return format_local_news_answer(query, result, analysis)
 
 # ========= 聊天Agent =========
-def chat_agent(query, history):
+def chat_agent(query, history, model):
     messages = [{"role": "system", "content": safe_text("你是一个友好的AI助手，名字叫fairy")}]
 
     for turn in normalize_history(history):
@@ -573,7 +599,12 @@ def chat_agent(query, history):
         return "当前未配置 DeepSeek API，我可以继续做新闻检索、分类和本地分析；普通聊天能力请在 `.env` 中设置 `DEEPSEEK_API_KEY` 后重试。"
 
     try:
-        return deepseek_client.chat(messages=messages, temperature=0.7, max_tokens=1024)
+        return deepseek_client.chat(
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1024,
+            model=model,
+        )
     except Exception as e:
         return f"DeepSeek 调用失败: {e}"
 
@@ -595,7 +626,7 @@ def extract_city_rule(query):
     return None
 
 
-def extract_city_ai(query):
+def extract_city_ai(query, model):
     rule_city = extract_city_rule(query)
     if rule_city:
         return rule_city
@@ -631,6 +662,7 @@ def extract_city_ai(query):
             messages=[{"role": "user", "content": safe_text(prompt)}],
             temperature=0.0,
             max_tokens=32,
+            model=model,
         ).strip()
     except Exception as e:
         print("DeepSeek 城市抽取失败:", e)
@@ -675,8 +707,8 @@ def get_city_id(city_name):
         print("城市查询失败:", e)
         return None
 
-def weather_agent(query):
-    city = extract_city_ai(query)
+def weather_agent(query, model):
+    city = extract_city_ai(query, model)
 
     print("DEBUG city:", city)
 
@@ -744,7 +776,7 @@ def tool_agent(query):
         return safe_text(f"计算时出错: {e}")
 
 # ========= 决策Agent =========
-def decide_agent(query):
+def decide_agent(query, model):
     lowered = query.lower()
     ensure_latest_news_assets()
     if is_temporal_news_query(query) or has_local_news_match(query):
@@ -757,6 +789,8 @@ def decide_agent(query):
         return "news"
     if any(word in query for word in ["天气", "气温", "下雨", "温度"]):
         return "weather"
+    if travel_agent.matches_query(query):
+        return "travel"
     if re.search(r"[\d\.\+\-\*\/\(\)]", query):
         return "tool"
 
@@ -770,7 +804,8 @@ def decide_agent(query):
 1. news(新闻相关)
 2. weather(天气查询)
 3. tool(计算/工具类问题)
-4. chat(日常聊天)
+4. travel(地名与旅游问答)
+5. chat(日常聊天)
 
 只返回一个词：
 """
@@ -784,6 +819,7 @@ def decide_agent(query):
                 messages=[{"role": "user", "content": safe_text(prompt)}],
                 temperature=0.0,
                 max_tokens=16,
+                model=model,
             ).strip().lower()
         )
     except Exception as e:
@@ -796,6 +832,8 @@ def decide_agent(query):
         return "weather"
     elif "tool" in decision:
         return "tool"
+    elif "travel" in decision:
+        return "travel"
     else:
         return "chat"
 
@@ -831,6 +869,18 @@ AGENT_PROFILES = {
         "intent": "chat",
         "tone": "chat",
     },
+    "travel": {
+        "id": "travel",
+        "name": "Geo Voyage",
+        "intent": "travel",
+        "tone": "travel",
+        "shortName": "GEO",
+        "glyph": "travel",
+        "color": "#e05a47",
+        "accent": "#27b8a2",
+        "tags": ["PLACE", "LOCAL"],
+        "sample": "地名解析与旅游问答",
+    },
 }
 
 
@@ -838,30 +888,37 @@ def get_agent_profiles():
     return list(AGENT_PROFILES.values())
 
 
-def resolve_agent_intent(agent_id, query):
+def resolve_agent_intent(agent_id, query, model):
     if not agent_id or agent_id == "auto":
-        return decide_agent(query)
+        return decide_agent(query, model)
 
     profile = AGENT_PROFILES.get(safe_text(agent_id).lower())
     if not profile:
-        return decide_agent(query)
+        return decide_agent(query, model)
 
     return profile["intent"]
 
 
-def agent_answer(query, history, agent_id=None):
-    intent = resolve_agent_intent(agent_id, query)
+def agent_answer(query, history, agent_id=None, model=None):
+    identity = identity_answer(query)
+    if identity:
+        return identity
+
+    selected_model = model or deepseek_client.model
+    intent = resolve_agent_intent(agent_id, query, selected_model)
 
     print(f"[调度] 当前任务类型: {intent}")
 
     if intent == "news":
-        return news_agent(query)
+        return news_agent(query, selected_model)
     elif intent == "weather":
-        return weather_agent(query)
+        return weather_agent(query, selected_model)
     elif intent == "tool":
         return tool_agent(query)
+    elif intent == "travel":
+        return travel_agent.answer(query, selected_model)
     else:
-        return chat_agent(query, history)
+        return chat_agent(query, history, selected_model)
 
 
 def normalize_history(history):
