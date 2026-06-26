@@ -1,0 +1,10 @@
+path: ./dataset
+train: images/train
+val: images/val
+
+names:
+  0: 水杯
+  1: 手机
+  2: 键盘
+  3: 鼠标
+  4: 学生证

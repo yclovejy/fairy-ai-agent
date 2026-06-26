@@ -22,7 +22,7 @@ if [[ $CONDA_DEFAULT_ENV == "ai_agent" ]]; then
     echo "Python路径: $(which python)"
     echo "Python版本: $(python --version)"
     echo ""
-    echo "现在可以运行: python agent_v5.py"
+    echo "现在可以运行: python run_server.py"
 else
     echo "✗ 虚拟环境激活失败"
     echo "当前环境: $CONDA_DEFAULT_ENV"

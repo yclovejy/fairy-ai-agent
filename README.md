@@ -43,13 +43,23 @@ Fairy 是一个 Python 智能新闻 Agent：用户询问“最新 / 最近 / 今
 ```text
 AI Agent/
 ├── app.py                         # FastAPI 服务入口
-├── agent_v5.py                    # 主 Agent 调度
-├── deepseek_client.py             # DeepSeek 调用封装
-├── fetch_news.py                  # 新闻源抓取、原文抓取、数据更新
-├── news_intelligence.py           # 情感分析 / 分类 / 摘要 / 舆情
-├── news_retrieval.py              # 持久化向量库与 reranker
-├── scheduler.py                   # 自动抓取与训练调度
-├── voice_service.py               # Whisper 语音识别接口
+├── run_server.py                  # 本地/局域网启动脚本
+├── fairy_core/                    # Fairy 核心后端能力
+│   ├── agent_v5.py                # 主 Agent 调度
+│   ├── deepseek_client.py         # DeepSeek 调用封装
+│   ├── news_intelligence.py       # 情感分析 / 分类 / 摘要 / 舆情
+│   ├── news_retrieval.py          # 持久化向量库与 reranker
+│   ├── travel_agent.py            # NLP 地名旅游问答 Agent
+│   ├── vision_service.py          # K230 视觉导览服务
+│   ├── environment_service.py     # ESP32 环境监测服务
+│   ├── voice_service.py           # Whisper 语音识别接口
+│   └── travel_qa/                 # 旅游问答本地知识库逻辑
+├── devices/                       # 边缘设备端程序
+│   ├── k230/                      # 庐山派 K230 / CanMV 脚本
+│   └── esp32/                     # ESP32 环境监测脚本
+├── training/                      # 训练与视觉模型配置
+│   ├── requirements-vision.txt
+│   └── vision_training/
 ├── docs/
 │   └── VSCODE_FIX.md              # VS Code 环境问题说明
 ├── data/
@@ -67,6 +77,7 @@ AI Agent/
 ├── scripts/
 │   ├── activate_env.sh            # conda 环境激活脚本
 │   └── train_transformer_news.py  # Transformer 分类训练脚本
+├── tests/                         # 单元测试与路由集成测试
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
@@ -92,6 +103,13 @@ DEEPSEEK_MODEL=deepseek-chat
 QWEATHER_API_KEY=你的和风天气密钥
 QWEATHER_HOST=你的和风天气域名
 
+# ESP32 环境监测设备密钥；留空时局域网设备可直接上传
+IOT_API_KEY=
+IOT_SIMULATION_ENABLED=true
+
+# K230 视觉导览设备密钥；留空时局域网设备可直接上传
+VISION_API_KEY=
+
 # 可选：如果你已经下载了 Whisper 模型，再开启这一项
 WHISPER_MODEL_ID=openai/whisper-tiny
 WHISPER_LANGUAGE=zh
@@ -114,6 +132,97 @@ NEWS_FETCH_ARTICLE_TEXT_ENABLED=true
 NEWS_VECTOR_STORE_ENABLED=true
 NEWS_RERANKER_ENABLED=true
 NEWS_ON_DEMAND_TRAIN_ENABLED=false
+```
+
+## ESP32 智慧环境监测
+
+Fairy 内置 `Environment Guardian` 智能体与环境监测面板，可接收温度、湿度、相对光照和人体红外状态。
+当前硬件使用 DS18B20、光敏电阻模块和 HC-SR501；没有湿度传感器，因此湿度会明确标记为模拟数据。
+ESP32 与运行 Fairy 的电脑处于同一 Wi-Fi 后，向下面的接口发送 JSON：
+
+```text
+POST http://电脑局域网IP:8000/api/environment/readings
+Content-Type: application/json
+X-IoT-Key: 与 IOT_API_KEY 相同的设备密钥
+```
+
+```json
+{
+  "device_id": "esp32-classroom-01",
+  "temperature": 26.5,
+  "humidity": 63,
+  "humidity_simulated": true,
+  "light": 320,
+  "light_raw": 1310,
+  "motion": true,
+  "firmware_version": "fairy-sense-1.0"
+}
+```
+
+`light` 是由 ESP32 ADC 原始值换算出的 `0-1000` 相对光照值，不应当作为经过校准的 lux 使用。
+
+环境接口：
+
+- `POST /api/environment/readings`：ESP32 上传读数
+- `GET /api/environment/latest`：获取最新读数与 Fairy 综合判断
+- `GET /api/environment/history?limit=60`：获取历史记录
+- `POST /api/environment/simulate`：生成一条界面演示数据
+
+在 macOS 上可以使用 Thonny 编写 ESP32 MicroPython 程序。连接开发板后，在
+`Run -> Select interpreter` 中选择 `MicroPython (ESP32)` 和对应串口；将需要开机运行的程序保存到
+ESP32 的 `main.py`。
+
+完整接线、硬件测试和上传步骤见 [`devices/esp32/README.md`](devices/esp32/README.md)。
+
+## K230 AI 视觉导览
+
+Fairy 内置 `Vision Guide` 智能体与视觉导览页，可接收庐山派 K230 的 YOLOv8 识别结果，生成物品讲解并保存历史记录。
+当前已在 `K230-LC-3 / LCKFB-LSPI-K230-1G-CanMV`、CanMV IDE K230 和 macOS 上验证：
+
+- 板载 CanMV 固件可直接运行，不需要 TF 卡
+- 摄像头 `GC2093 CSI2` 可在 IDE 中实时预览
+- 板载 YOLOv8 通用模型可识别水杯、手机、键盘、鼠标、电脑等 COCO 类别
+- K230 可通过 Wi-Fi 向 Fairy 的 HTTP REST API 上传结果
+
+视觉接口：
+
+- `POST /api/vision`：K230 上传识别结果
+- `GET /api/vision/latest`：获取最新识别结果
+- `GET /api/vision/history?limit=60`：获取历史记录
+- `DELETE /api/vision/history`：清空识别历史
+
+最小上传格式：
+
+```json
+{
+  "label": "手机",
+  "confidence": 0.95,
+  "source": "k230-yolov8",
+  "device_id": "K230-LC-3"
+}
+```
+
+Mac 与 K230 应连接到同一个 2.4 GHz Wi-Fi 或手机热点。macOS 的热点局域网 IP 可能会变化，可用下面命令查看：
+
+```bash
+ifconfig en0 | grep "inet "
+```
+
+K230 示例脚本在 [`devices/k230/fairy_yolov8_http.py`](devices/k230/fairy_yolov8_http.py)。运行前需要在脚本顶部修改：
+
+```python
+WIFI_SSID = "FairyHotspot"
+WIFI_PASSWORD = "你的热点密码"
+FAIRY_HOST = "Mac 当前局域网 IP"
+```
+
+当前脚本使用板载 `yolov8n_224.kmodel` 和 COCO 标签，并将 `cup / bottle / cell phone / keyboard / mouse / laptop`
+映射为中文后上传。`学生证` 不属于 COCO 通用类别，后续需要采集自定义数据集、训练 YOLOv8，并将模型转换为 K230 可运行的 `.kmodel`。
+
+Mac 端调试和无板演示脚本在 [`fairy_core/vision_sender.py`](fairy_core/vision_sender.py)：
+
+```bash
+python -m fairy_core.vision_sender --simulate --once
 ```
 
 ## 训练 Transformer 新闻分类模型

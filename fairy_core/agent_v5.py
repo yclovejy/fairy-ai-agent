@@ -14,23 +14,25 @@ try:
 except Exception:
     SentenceTransformer = None
 
-from deepseek_client import deepseek_client
-from news_intelligence import NewsIntelligenceService, format_analysis_block
-from news_retrieval import (
+from fairy_core.deepseek_client import deepseek_client
+from fairy_core.news_intelligence import NewsIntelligenceService, format_analysis_block
+from fairy_core.news_retrieval import (
     CrossEncoderReranker,
     load_vector_store,
     save_vector_store,
     source_credibility_line,
     weighted_news_text,
 )
-from travel_agent import travel_agent
+from fairy_core.travel_agent import travel_agent
+from fairy_core.environment_service import environment_service
+from fairy_core.paths import DATA_DIR
+from fairy_core.vision_service import vision_service
 
 load_dotenv()
 
 # 定义常量
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-EMBED_PATH = os.path.join(_BASE_DIR, "data", "news_embeddings.npy")
-NEWS_PATH = os.path.join(_BASE_DIR, "data", "news.json")
+EMBED_PATH = str(DATA_DIR / "news_embeddings.npy")
+NEWS_PATH = str(DATA_DIR / "news.json")
 SENTENCE_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 # ========= 初始化 =========
@@ -304,7 +306,7 @@ def ensure_news_available():
 
     print("新闻数据为空，尝试立即抓取一次...")
     try:
-        from fetch_news import run_news_pipeline
+        from fairy_core.fetch_news import run_news_pipeline
         updated = run_news_pipeline(train_transformer=False)
     except Exception as exc:
         print("新闻即时抓取失败:", exc)
@@ -324,7 +326,7 @@ def refresh_news_before_answer(query):
 
     with _news_asset_lock:
         try:
-            from fetch_news import refresh_news_for_query
+            from fairy_core.fetch_news import refresh_news_for_query
             updated = refresh_news_for_query(query, train_transformer=train_transformer)
         except Exception as exc:
             print("[新闻刷新] 即时刷新失败:", exc)
@@ -787,8 +789,38 @@ def decide_agent(query, model):
         return "news"
     if re.search(r"(科技|财经|娱乐|体育|AI).*(新闻|动态|热点|情况|走势)", query):
         return "news"
+    environment_terms = (
+        "环境数据",
+        "环境状态",
+        "室内环境",
+        "教室环境",
+        "实验室环境",
+        "传感器",
+        "光照",
+        "人体红外",
+        "有人吗",
+        "有人经过",
+        "esp32",
+    )
+    if any(term in lowered for term in environment_terms):
+        return "environment"
+    if ("室内" in query or "教室" in query or "实验室" in query) and any(
+        word in query for word in ["温度", "湿度", "亮度", "有人"]
+    ):
+        return "environment"
     if any(word in query for word in ["天气", "气温", "下雨", "温度"]):
         return "weather"
+    vision_terms = (
+        "看到了什么",
+        "看到什么",
+        "摄像头",
+        "视觉识别",
+        "识别记录",
+        "刚才识别",
+        "眼前是什么",
+    )
+    if any(term in safe_text(query) for term in vision_terms):
+        return "vision"
     if travel_agent.matches_query(query):
         return "travel"
     if re.search(r"[\d\.\+\-\*\/\(\)]", query):
@@ -805,7 +837,8 @@ def decide_agent(query, model):
 2. weather(天气查询)
 3. tool(计算/工具类问题)
 4. travel(地名与旅游问答)
-5. chat(日常聊天)
+5. environment(ESP32室内环境监测)
+6. chat(日常聊天)
 
 只返回一个词：
 """
@@ -834,6 +867,8 @@ def decide_agent(query, model):
         return "tool"
     elif "travel" in decision:
         return "travel"
+    elif "environment" in decision:
+        return "environment"
     else:
         return "chat"
 
@@ -881,6 +916,30 @@ AGENT_PROFILES = {
         "tags": ["PLACE", "LOCAL"],
         "sample": "地名解析与旅游问答",
     },
+    "vision": {
+        "id": "vision",
+        "name": "Vision Guide",
+        "intent": "vision",
+        "tone": "vision",
+        "shortName": "VISION",
+        "glyph": "vision",
+        "color": "#0f8d8f",
+        "accent": "#f3b548",
+        "tags": ["YOLO", "K230"],
+        "sample": "目标识别与视觉导览",
+    },
+    "environment": {
+        "id": "environment",
+        "name": "Environment Guardian",
+        "intent": "environment",
+        "tone": "environment",
+        "shortName": "ENV",
+        "glyph": "environment",
+        "color": "#11967d",
+        "accent": "#7de3a1",
+        "tags": ["ESP32", "SENSOR"],
+        "sample": "环境监测与异常预警",
+    },
 }
 
 
@@ -917,6 +976,10 @@ def agent_answer(query, history, agent_id=None, model=None):
         return tool_agent(query)
     elif intent == "travel":
         return travel_agent.answer(query, selected_model)
+    elif intent == "vision":
+        return vision_service.answer(query, selected_model)
+    elif intent == "environment":
+        return environment_service.answer(query, selected_model)
     else:
         return chat_agent(query, history, selected_model)
 

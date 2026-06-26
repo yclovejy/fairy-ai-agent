@@ -22,6 +22,7 @@ const sidebar = document.querySelector(".sidebar");
 const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
 const sidebarBrandToggleBtn = document.getElementById("sidebar-brand-toggle-btn");
 const sidebarOverlay = document.getElementById("sidebar-overlay");
+const sidebarResizer = document.getElementById("sidebar-resizer");
 const navItems = document.querySelectorAll("[data-sidebar-page]");
 const historySection = document.querySelector(".history-section");
 const agentSection = document.getElementById("agent-section");
@@ -33,11 +34,52 @@ const suggestionCards = document.querySelectorAll(".suggestion-card");
 const modelMenuBtn = document.getElementById("model-menu-btn");
 const modelMenu = document.getElementById("model-menu");
 const modelOptions = document.querySelectorAll("[data-model]");
+const composerModelHint = document.getElementById("composer-model-hint");
 const voiceBtn = document.getElementById("voice-btn");
 const voiceHint = document.getElementById("voice-hint");
 const searchToggle = document.querySelector(".search-toggle");
 const inputArea = document.getElementById("chat-form");
 const composerToggle = document.getElementById("composer-toggle");
+const visionWorkspace = document.getElementById("vision-workspace");
+const visionDeviceState = document.getElementById("vision-device-state");
+const visionRefreshBtn = document.getElementById("vision-refresh-btn");
+const visionClearBtn = document.getElementById("vision-clear-btn");
+const visionSpeakBtn = document.getElementById("vision-speak-btn");
+const visionLabel = document.getElementById("vision-label");
+const visionConfidence = document.getElementById("vision-confidence");
+const visionConfidenceBar = document.getElementById("vision-confidence-bar");
+const visionDescription = document.getElementById("vision-description");
+const visionInfoStatus = document.getElementById("vision-info-status");
+const visionDescriptionLoader = document.getElementById("vision-description-loader");
+const visionSphereCanvas = document.getElementById("vision-sphere-canvas");
+const visionSource = document.getElementById("vision-source");
+const visionTime = document.getElementById("vision-time");
+const visionHistoryCount = document.getElementById("vision-history-count");
+const visionHistoryList = document.getElementById("vision-history-list");
+const environmentWorkspace = document.getElementById("environment-workspace");
+const environmentDeviceState = document.getElementById("environment-device-state");
+const environmentRefreshBtn = document.getElementById("environment-refresh-btn");
+const environmentSimulateBtn = document.getElementById("environment-simulate-btn");
+const environmentStatusCard = document.getElementById("environment-status-card");
+const environmentStatusLabel = document.getElementById("environment-status-label");
+const environmentStatusSummary = document.getElementById("environment-status-summary");
+const environmentUpdatedAt = document.getElementById("environment-updated-at");
+const environmentTemperature = document.getElementById("environment-temperature");
+const environmentHumidity = document.getElementById("environment-humidity");
+const environmentHumiditySource = document.getElementById("environment-humidity-source");
+const environmentLight = document.getElementById("environment-light");
+const environmentMotion = document.getElementById("environment-motion");
+const environmentDeviceName = document.getElementById("environment-device-name");
+const environmentHistoryCount = document.getElementById("environment-history-count");
+const environmentTemperatureLine = document.getElementById("environment-temperature-line");
+const environmentHumidityLine = document.getElementById("environment-humidity-line");
+const environmentAdviceList = document.getElementById("environment-advice-list");
+const environmentMiniScreen = document.getElementById("environment-mini-screen");
+const miniEnvironmentState = document.getElementById("mini-environment-state");
+const miniTemperature = document.getElementById("mini-temperature");
+const miniHumidity = document.getElementById("mini-humidity");
+const miniLight = document.getElementById("mini-light");
+const miniMotion = document.getElementById("mini-motion");
 const sidebarMediaQuery = window.matchMedia("(max-width: 768px)");
 const systemAppearanceQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -45,10 +87,16 @@ const API_URL = `/chat`;
 const PING_URL = `/ping`;
 const AGENTS_URL = `/agents`;
 const VOICE_CHAT_URL = `/voice/chat`;
+const VISION_LATEST_URL = `/api/vision/latest`;
+const VISION_HISTORY_URL = `/api/vision/history`;
+const ENVIRONMENT_LATEST_URL = `/api/environment/latest`;
+const ENVIRONMENT_HISTORY_URL = `/api/environment/history`;
+const ENVIRONMENT_SIMULATE_URL = `/api/environment/simulate`;
 const CONVERSATIONS_KEY = "fairyConversations";
 const ACTIVE_CONVERSATION_KEY = "fairyActiveConversationId";
 const ACTIVE_AGENT_KEY = "fairyActiveAgentId";
 const ACTIVE_MODEL_KEY = "fairyActiveModel";
+const SIDEBAR_WIDTH_KEY = "fairySidebarWidth";
 const LEGACY_CHAT_HISTORY_KEY = "chatHistory";
 const SETTINGS_KEY = "fairySettings";
 const DEFAULT_AGENT_ID = "auto";
@@ -115,6 +163,26 @@ const AGENT_CATALOG_FALLBACK = [
         tags: ["PLACE", "LOCAL"],
         sample: "地名解析与旅游问答"
     },
+    {
+        id: "vision",
+        name: "Vision Guide",
+        shortName: "VISION",
+        glyph: "vision",
+        color: "#0f8d8f",
+        accent: "#f3b548",
+        tags: ["YOLO", "K230"],
+        sample: "目标识别与视觉导览"
+    },
+    {
+        id: "environment",
+        name: "Environment Guardian",
+        shortName: "ENV",
+        glyph: "environment",
+        color: "#11967d",
+        accent: "#7de3a1",
+        tags: ["ESP32", "SENSOR"],
+        sample: "环境监测与异常预警"
+    },
 ];
 const DEFAULT_SETTINGS = {
     theme: "blue",
@@ -145,6 +213,13 @@ let lastComposerVisible = null;
 let lastComposerLocked = null;
 let composerStateFrame = null;
 let viewportStateFrame = null;
+let activeWorkspace = "chat";
+let visionPollTimer = null;
+let latestVisionDetection = null;
+let visionInitialized = false;
+let visionSphere = null;
+let environmentPollTimer = null;
+let latestEnvironmentReading = null;
 
 function init() {
     initViewportSizing();
@@ -186,6 +261,8 @@ function init() {
     initSettingsPanel();
     initComposerReveal();
     initVoiceRecognition();
+    initVisionWorkspace();
+    initEnvironmentWorkspace();
 
     loadChatHistory();
     updateComposerState();
@@ -399,6 +476,11 @@ function syncModelMenu() {
         "title",
         currentModel === "deepseek-v4-pro" ? "fairy-pro" : "fairy-fast"
     );
+    if (composerModelHint) {
+        composerModelHint.textContent = currentModel === "deepseek-v4-pro"
+            ? "fairy-pro"
+            : "fairy-fast";
+    }
 }
 
 function getActiveAgent() {
@@ -461,6 +543,8 @@ function getAgentIconMarkup(glyph = "orbit") {
         tool: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 17h14"></path><path d="M8 4v6M16 14v6"></path><circle cx="8" cy="7" r="2"></circle><circle cx="16" cy="17" r="2"></circle></svg>`,
         chat: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 11h10M9 16h6"></path><path d="M6 20l3-3"></path></svg>`,
         travel: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20z"></path><path d="M9 4v13.5M15 6.5V20"></path><circle cx="15" cy="11" r="1.6"></circle></svg>`,
+        vision: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"></path><circle cx="12" cy="12" r="2.5"></circle><path d="M5 4v3M4 5.5h3M19 17v3M17.5 18.5h3"></path></svg>`,
+        environment: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15a4 4 0 1 0 6 3.5V7a3 3 0 0 0-6 0z"></path><path d="M9 7v9M15 7h5M15 12h4M15 17h5"></path></svg>`,
     };
     return icons[glyph] || icons.orbit;
 }
@@ -503,13 +587,36 @@ function initAgentPanel() {
 }
 
 function setSidebarPage(page) {
-    const targetPage = page === "agents" ? "agents" : "chat";
+    const targetPage = ["agents", "vision", "environment"].includes(page) ? page : "chat";
+    const centralPage = ["vision", "environment"].includes(targetPage) ? targetPage : "chat";
+    activeWorkspace = centralPage;
     navItems.forEach(item => {
         item.classList.toggle("active", (item.dataset.sidebarPage || "chat") === targetPage);
     });
     if (agentSection) agentSection.hidden = targetPage !== "agents";
     if (historySection) historySection.hidden = targetPage === "agents";
     sidebar?.classList.toggle("agent-page-open", targetPage === "agents");
+    if (visionWorkspace) visionWorkspace.hidden = centralPage !== "vision";
+    if (environmentWorkspace) environmentWorkspace.hidden = centralPage !== "environment";
+    chatMessages.hidden = centralPage !== "chat";
+    document.querySelector(".chat-main")?.classList.toggle("vision-open", centralPage === "vision");
+    document.querySelector(".chat-main")?.classList.toggle("environment-open", centralPage === "environment");
+    if (centralPage === "vision") {
+        visionSphere?.start();
+        refreshVisionWorkspace();
+        startVisionPolling();
+        if (isMobileSidebar()) closeSidebar();
+    } else {
+        visionSphere?.stop();
+        stopVisionPolling();
+    }
+    if (centralPage === "environment") {
+        refreshEnvironmentWorkspace();
+        startEnvironmentPolling();
+        if (isMobileSidebar()) closeSidebar();
+    } else {
+        stopEnvironmentPolling();
+    }
 }
 
 function selectAgent(agentId) {
@@ -898,6 +1005,535 @@ function setStatus(status, text) {
         dot.className = "status-dot offline";
         statusBadge.innerHTML = `<span class="status-dot offline"></span>${text}`;
     }
+}
+
+function initVisionWorkspace() {
+    if (!visionWorkspace) return;
+    visionSphere = createVisionSphere(visionSphereCanvas);
+    visionRefreshBtn?.addEventListener("click", refreshVisionWorkspace);
+    visionSpeakBtn?.addEventListener("click", () => {
+        if (latestVisionDetection?.description) {
+            speakText(latestVisionDetection.description);
+        }
+    });
+    visionClearBtn?.addEventListener("click", clearVisionHistory);
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && activeWorkspace === "vision") {
+            visionSphere?.start();
+            startVisionPolling();
+            refreshVisionWorkspace();
+        } else if (document.visibilityState !== "visible") {
+            visionSphere?.stop();
+            stopVisionPolling();
+        }
+    });
+}
+
+function createVisionSphere(canvas) {
+    if (!canvas) return null;
+
+    const ctx = canvas.getContext("2d", { alpha: true });
+    const particles = [];
+    const state = {
+        width: 0,
+        height: 0,
+        dpr: 1,
+        radius: 160,
+        rotation: 0,
+        mode: "idle",
+        burstUntil: 0,
+        targetActiveUntil: 0,
+        frame: null,
+        running: false,
+    };
+    const particleCount = 1400;
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+    for (let i = 0; i < particleCount; i += 1) {
+        const y = 1 - (i / (particleCount - 1)) * 2;
+        const r = Math.sqrt(Math.max(0, 1 - y * y));
+        const theta = goldenAngle * i;
+        particles.push({
+            x: Math.cos(theta) * r,
+            y,
+            z: Math.sin(theta) * r,
+            phase: Math.random() * Math.PI * 2,
+            speed: 0.45 + Math.random() * 0.85,
+            size: 0.72 + Math.random() * 1.45,
+            burst: 0.35 + Math.random() * 0.95,
+        });
+    }
+
+    function resize() {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const width = Math.max(1, Math.floor(rect.width));
+        const height = Math.max(1, Math.floor(rect.height));
+        if (state.width === width && state.height === height && state.dpr === dpr) return;
+        state.width = width;
+        state.height = height;
+        state.dpr = dpr;
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        state.radius = Math.max(86, Math.min(width, height) * 0.33);
+    }
+
+    function colorFor(depth, index, alpha) {
+        const hue = 188 + depth * 34 + Math.sin(index * 0.017) * 18;
+        const light = 52 + depth * 38;
+        return `hsla(${hue}, 92%, ${light}%, ${alpha})`;
+    }
+
+    function draw(now) {
+        if (!state.running) return;
+        resize();
+        const width = state.width;
+        const height = state.height;
+        const cx = width / 2;
+        const cy = height / 2;
+        const time = now * 0.001;
+        const burstProgress = Math.max(0, Math.min(1, (state.burstUntil - now) / 1050));
+        const targetGlow = now < state.targetActiveUntil ? 1 : 0;
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        const gradient = ctx.createRadialGradient(cx, cy, state.radius * 0.18, cx, cy, state.radius * 1.55);
+        gradient.addColorStop(0, `rgba(111, 231, 240, ${0.12 + targetGlow * 0.08})`);
+        gradient.addColorStop(0.48, `rgba(39, 104, 246, ${0.08 + targetGlow * 0.10})`);
+        gradient.addColorStop(1, "rgba(15, 23, 42, 0)");
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(cx, cy, state.radius * 1.58, 0, Math.PI * 2);
+        ctx.fill();
+
+        state.rotation -= 0.0026;
+        const cos = Math.cos(state.rotation);
+        const sin = Math.sin(state.rotation);
+        const burst = burstProgress ? Math.sin(burstProgress * Math.PI) : 0;
+        const breathe = 1 + Math.sin(time * 1.55) * 0.018;
+
+        particles.forEach((particle, index) => {
+            const ripple = Math.sin(time * particle.speed + particle.phase) * 0.030;
+            const radial = breathe + ripple + burst * particle.burst * 0.86;
+            const x0 = particle.x * radial;
+            const y0 = particle.y * radial;
+            const z0 = particle.z * radial;
+            const x = x0 * cos - z0 * sin;
+            const z = x0 * sin + z0 * cos;
+            const y = y0 + Math.sin(time * 0.58 + particle.phase) * 0.014;
+            const depth = (z + 1.3) / 2.6;
+            const perspective = 0.72 + depth * 0.42;
+            const px = cx + x * state.radius * perspective;
+            const py = cy + y * state.radius * perspective;
+            const alpha = 0.18 + depth * 0.78 + targetGlow * 0.08;
+            const size = particle.size * (0.62 + depth * 0.82) * (1 + burst * 0.42);
+            ctx.fillStyle = colorFor(depth, index, Math.min(alpha, 0.95));
+            ctx.beginPath();
+            ctx.arc(px, py, size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.restore();
+
+        state.frame = window.requestAnimationFrame(draw);
+    }
+
+    function start() {
+        if (state.running) return;
+        state.running = true;
+        resize();
+        state.frame = window.requestAnimationFrame(draw);
+    }
+
+    function stop() {
+        state.running = false;
+        if (state.frame !== null) window.cancelAnimationFrame(state.frame);
+        state.frame = null;
+    }
+
+    function burst() {
+        state.burstUntil = performance.now() + 1050;
+        state.targetActiveUntil = performance.now() + 5200;
+        start();
+    }
+
+    window.addEventListener("resize", resize, { passive: true });
+    start();
+    return { start, stop, burst, resize };
+}
+
+function startVisionPolling() {
+    if (visionPollTimer !== null) return;
+    visionPollTimer = window.setInterval(fetchLatestVisionDetection, 2500);
+}
+
+function stopVisionPolling() {
+    if (visionPollTimer === null) return;
+    window.clearInterval(visionPollTimer);
+    visionPollTimer = null;
+}
+
+async function refreshVisionWorkspace() {
+    await Promise.all([
+        fetchLatestVisionDetection(),
+        fetchVisionHistory(),
+    ]);
+}
+
+async function fetchLatestVisionDetection() {
+    if (!visionWorkspace) return;
+    try {
+        const response = await fetch(VISION_LATEST_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const detection = data.detection || null;
+        const isNewDetection = Boolean(
+            detection
+            && visionInitialized
+            && (!latestVisionDetection || detection.id !== latestVisionDetection.id)
+        );
+        latestVisionDetection = detection;
+        renderLatestVisionDetection(detection);
+        if (isNewDetection) {
+            visionSphere?.burst();
+            fetchVisionHistory();
+            if (appSettings.autoSpeak && detection.description) {
+                speakText(detection.description);
+            }
+        }
+        visionInitialized = true;
+    } catch (error) {
+        setVisionDeviceState(false, "连接中断");
+    }
+}
+
+async function fetchVisionHistory() {
+    if (!visionHistoryList) return;
+    try {
+        const response = await fetch(`${VISION_HISTORY_URL}?limit=60`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        renderVisionHistory(Array.isArray(data.detections) ? data.detections : []);
+    } catch (error) {
+        visionHistoryList.innerHTML = `<div class="vision-empty">历史记录加载失败</div>`;
+    }
+}
+
+function renderLatestVisionDetection(detection) {
+    if (!visionLabel || !visionConfidence || !visionDescription) return;
+    if (!detection) {
+        visionLabel.textContent = "等待视觉信号";
+        visionConfidence.querySelector("b").textContent = "--";
+        visionConfidenceBar.style.width = "0%";
+        visionDescription.textContent = "尚未收到识别结果";
+        if (visionInfoStatus) visionInfoStatus.textContent = "STANDBY";
+        if (visionDescriptionLoader) visionDescriptionLoader.hidden = true;
+        visionSource.textContent = "K230";
+        visionTime.textContent = "--:--:--";
+        visionSpeakBtn.disabled = true;
+        document.body.classList.remove("vision-detected", "vision-thinking");
+        setVisionDeviceState(false, "等待设备");
+        return;
+    }
+
+    const confidence = Math.max(0, Math.min(1, Number(detection.confidence) || 0));
+    const descriptionStatus = detection.description_status || "ready";
+    const isPending = descriptionStatus === "pending";
+    visionLabel.textContent = detection.label;
+    visionConfidence.querySelector("b").textContent = `${Math.round(confidence * 100)}%`;
+    visionConfidenceBar.style.width = `${confidence * 100}%`;
+    visionDescription.textContent = detection.description;
+    if (visionInfoStatus) {
+        visionInfoStatus.textContent = isPending ? "SEARCHING" : "READY";
+    }
+    if (visionDescriptionLoader) {
+        visionDescriptionLoader.hidden = !isPending;
+    }
+    visionSource.textContent = detection.device_id || detection.source || "K230";
+    visionTime.textContent = formatVisionTime(detection.captured_at);
+    visionSpeakBtn.disabled = !detection.description || isPending;
+    document.body.classList.toggle("vision-detected", true);
+    document.body.classList.toggle("vision-thinking", isPending);
+
+    const age = Date.now() - new Date(detection.created_at || detection.captured_at).getTime();
+    const live = Number.isFinite(age) && age < 20000;
+    setVisionDeviceState(live || isPending, isPending ? "检索中" : (live ? "实时识别" : "记录已同步"));
+}
+
+function renderVisionHistory(detections) {
+    if (!visionHistoryList || !visionHistoryCount) return;
+    visionHistoryCount.textContent = String(detections.length);
+    visionHistoryList.innerHTML = "";
+    if (!detections.length) {
+        visionHistoryList.innerHTML = `<div class="vision-empty">暂无识别记录</div>`;
+        return;
+    }
+
+    detections.forEach(detection => {
+        const item = document.createElement("button");
+        item.className = "vision-history-item";
+        item.type = "button";
+        item.innerHTML = `
+            <span class="vision-history-glyph">${getAgentIconMarkup("vision")}</span>
+            <span class="vision-history-copy">
+                <strong>${escapeHtml(detection.label)}</strong>
+                <small>${escapeHtml(formatVisionDate(detection.captured_at))}</small>
+            </span>
+            <span class="vision-history-score">${Math.round((Number(detection.confidence) || 0) * 100)}%</span>
+        `;
+        item.addEventListener("click", () => {
+            latestVisionDetection = detection;
+            renderLatestVisionDetection(detection);
+        });
+        visionHistoryList.appendChild(item);
+    });
+}
+
+function setVisionDeviceState(active, text) {
+    if (!visionDeviceState) return;
+    visionDeviceState.classList.toggle("active", active);
+    visionDeviceState.lastChild.textContent = text;
+}
+
+function formatVisionTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "--:--:--";
+    return new Intl.DateTimeFormat("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    }).format(date);
+}
+
+function formatVisionDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "时间未知";
+    return new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).format(date);
+}
+
+async function clearVisionHistory() {
+    if (!confirm("确定清空全部视觉识别记录吗？")) return;
+    try {
+        const response = await fetch(VISION_HISTORY_URL, { method: "DELETE" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        latestVisionDetection = null;
+        visionInitialized = false;
+        renderLatestVisionDetection(null);
+        renderVisionHistory([]);
+    } catch (error) {
+        setVisionDeviceState(false, "清空失败");
+    }
+}
+
+function initEnvironmentWorkspace() {
+    if (!environmentWorkspace) return;
+    environmentRefreshBtn?.addEventListener("click", refreshEnvironmentWorkspace);
+    environmentSimulateBtn?.addEventListener("click", simulateEnvironmentReading);
+    environmentMiniScreen?.addEventListener("click", () => setSidebarPage("environment"));
+    fetchLatestEnvironmentReading();
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            fetchLatestEnvironmentReading();
+            if (activeWorkspace === "environment") {
+                startEnvironmentPolling();
+                fetchEnvironmentHistory();
+            }
+        } else {
+            stopEnvironmentPolling();
+        }
+    });
+}
+
+function startEnvironmentPolling() {
+    if (environmentPollTimer !== null) return;
+    environmentPollTimer = window.setInterval(fetchLatestEnvironmentReading, 3000);
+}
+
+function stopEnvironmentPolling() {
+    if (environmentPollTimer === null) return;
+    window.clearInterval(environmentPollTimer);
+    environmentPollTimer = null;
+}
+
+async function refreshEnvironmentWorkspace() {
+    await Promise.all([
+        fetchLatestEnvironmentReading(),
+        fetchEnvironmentHistory(),
+    ]);
+}
+
+async function fetchLatestEnvironmentReading() {
+    try {
+        const response = await fetch(ENVIRONMENT_LATEST_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        latestEnvironmentReading = data.reading || null;
+        renderEnvironmentSnapshot(latestEnvironmentReading, data.status || null);
+    } catch (error) {
+        setEnvironmentDeviceState(false, "连接中断");
+    }
+}
+
+async function fetchEnvironmentHistory() {
+    if (!environmentHistoryCount) return;
+    try {
+        const response = await fetch(`${ENVIRONMENT_HISTORY_URL}?limit=60`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        renderEnvironmentHistory(Array.isArray(data.readings) ? data.readings : []);
+    } catch (error) {
+        environmentHistoryCount.textContent = "加载失败";
+    }
+}
+
+async function simulateEnvironmentReading() {
+    if (!environmentSimulateBtn) return;
+    environmentSimulateBtn.disabled = true;
+    environmentSimulateBtn.textContent = "生成中";
+    try {
+        const response = await fetch(ENVIRONMENT_SIMULATE_URL, { method: "POST" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        await refreshEnvironmentWorkspace();
+    } catch (error) {
+        setEnvironmentDeviceState(false, "模拟失败");
+    } finally {
+        environmentSimulateBtn.disabled = false;
+        environmentSimulateBtn.textContent = "演示数据";
+    }
+}
+
+function renderEnvironmentSnapshot(reading, status) {
+    const normalizedStatus = status || {
+        level: "offline",
+        label: "等待设备",
+        summary: "尚未收到 ESP32 环境数据。",
+        alerts: [],
+        suggestions: [],
+    };
+    environmentStatusCard?.setAttribute("data-level", normalizedStatus.level || "offline");
+    if (environmentStatusLabel) environmentStatusLabel.textContent = normalizedStatus.label || "等待设备";
+    if (environmentStatusSummary) environmentStatusSummary.textContent = normalizedStatus.summary || "";
+    renderEnvironmentAdvice(normalizedStatus);
+
+    if (!reading) {
+        if (environmentTemperature) environmentTemperature.textContent = "--";
+        if (environmentHumidity) environmentHumidity.textContent = "--";
+        if (environmentLight) environmentLight.textContent = "--";
+        if (environmentMotion) environmentMotion.textContent = "--";
+        if (environmentDeviceName) environmentDeviceName.textContent = "ESP32 尚未连接";
+        if (environmentUpdatedAt) environmentUpdatedAt.textContent = "--:--:--";
+        setEnvironmentDeviceState(false, "等待 ESP32");
+        renderEnvironmentMiniScreen(null, normalizedStatus);
+        return;
+    }
+
+    const temperature = Number(reading.temperature);
+    const humidity = Number(reading.humidity);
+    const light = Number(reading.light);
+    if (environmentTemperature) environmentTemperature.textContent = temperature.toFixed(1);
+    if (environmentHumidity) environmentHumidity.textContent = humidity.toFixed(1);
+    if (environmentHumiditySource) {
+        const simulated = Boolean(reading.humidity_simulated);
+        environmentHumiditySource.textContent = simulated ? "模拟" : "实测";
+        environmentHumiditySource.classList.toggle("measured", !simulated);
+    }
+    if (environmentLight) environmentLight.textContent = Math.round(light);
+    if (environmentMotion) environmentMotion.textContent = reading.motion ? "有人" : "无人";
+    if (environmentDeviceName) {
+        const firmware = reading.firmware_version ? ` · ${reading.firmware_version}` : "";
+        environmentDeviceName.textContent = `${reading.device_id || "ESP32"}${firmware}`;
+    }
+    if (environmentUpdatedAt) environmentUpdatedAt.textContent = formatVisionTime(reading.captured_at);
+
+    const age = Date.now() - new Date(reading.created_at || reading.captured_at).getTime();
+    const live = Number.isFinite(age) && age < 20000;
+    setEnvironmentDeviceState(live, live ? "ESP32 在线" : "数据已同步");
+    renderEnvironmentMiniScreen(reading, normalizedStatus);
+}
+
+function renderEnvironmentMiniScreen(reading, status) {
+    if (!environmentMiniScreen) return;
+    environmentMiniScreen.dataset.level = status?.level || "offline";
+    if (miniEnvironmentState) {
+        miniEnvironmentState.textContent = status?.level === "normal"
+            ? "ENV OK"
+            : status?.level === "offline" ? "ENV WAIT" : "ENV ALERT";
+    }
+    if (miniTemperature) miniTemperature.textContent = reading ? `${Number(reading.temperature).toFixed(1)}℃` : "--℃";
+    if (miniHumidity) miniHumidity.textContent = reading ? `${Math.round(Number(reading.humidity))}%` : "--%";
+    if (miniLight) miniLight.textContent = reading ? `${Math.round(Number(reading.light))}` : "--";
+    if (miniMotion) miniMotion.textContent = reading ? (reading.motion ? "有人" : "无人") : "--";
+}
+
+function renderEnvironmentAdvice(status) {
+    if (!environmentAdviceList) return;
+    const alerts = Array.isArray(status?.alerts) ? status.alerts : [];
+    const suggestions = Array.isArray(status?.suggestions) ? status.suggestions : [];
+    const items = [
+        ...alerts.map(text => ({ type: "alert", label: "提醒", text })),
+        ...suggestions.map(text => ({ type: "suggestion", label: "建议", text })),
+    ];
+    if (!items.length) {
+        environmentAdviceList.innerHTML = `<div class="environment-empty">暂无环境建议</div>`;
+        return;
+    }
+    environmentAdviceList.innerHTML = items.map(item => `
+        <article class="environment-advice ${item.type}">
+            <span>${item.label}</span>
+            <p>${escapeHtml(item.text)}</p>
+        </article>
+    `).join("");
+}
+
+function renderEnvironmentHistory(readings) {
+    if (!environmentHistoryCount) return;
+    environmentHistoryCount.textContent = `${readings.length} 条`;
+    const chronological = [...readings].reverse();
+    if (!chronological.length) {
+        environmentTemperatureLine?.setAttribute("points", "");
+        environmentHumidityLine?.setAttribute("points", "");
+        return;
+    }
+    const temperaturePoints = buildEnvironmentChartPoints(
+        chronological.map(item => Number(item.temperature)),
+        10,
+        40
+    );
+    const humidityPoints = buildEnvironmentChartPoints(
+        chronological.map(item => Number(item.humidity)),
+        0,
+        100
+    );
+    environmentTemperatureLine?.setAttribute("points", temperaturePoints);
+    environmentHumidityLine?.setAttribute("points", humidityPoints);
+}
+
+function buildEnvironmentChartPoints(values, minimum, maximum) {
+    if (!values.length) return "";
+    const width = 600;
+    const height = 190;
+    const padding = 16;
+    const range = Math.max(1, maximum - minimum);
+    return values.map((value, index) => {
+        const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
+        const ratio = Math.max(0, Math.min(1, (value - minimum) / range));
+        const y = height - padding - ratio * (height - padding * 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+}
+
+function setEnvironmentDeviceState(active, text) {
+    if (!environmentDeviceState) return;
+    environmentDeviceState.classList.toggle("active", active);
+    environmentDeviceState.lastChild.textContent = text;
 }
 
 async function sendMessage() {
@@ -1289,7 +1925,8 @@ function scrollToBottom() {
 function initSidebar() {
     if (!sidebar || !sidebarOverlay) return;
 
-    document.body.classList.add("sidebar-collapsed");
+    document.body.classList.remove("sidebar-resizing");
+    loadSidebarWidth();
     sidebar.classList.remove("open");
     document.body.classList.remove("sidebar-open");
 
@@ -1298,10 +1935,12 @@ function initSidebar() {
     });
 
     sidebarOverlay.addEventListener("click", closeSidebar);
+    initSidebarResize();
 
     const syncOnViewportChange = () => {
         if (!isMobileSidebar()) {
             closeSidebar();
+            loadSidebarWidth();
         }
         updateSidebarControls();
     };
@@ -1328,6 +1967,9 @@ function toggleSidebar() {
     } else {
         closeSidebar();
         document.body.classList.toggle("sidebar-collapsed");
+        if (!document.body.classList.contains("sidebar-collapsed")) {
+            loadSidebarWidth();
+        }
     }
 
     updateSidebarControls();
@@ -1357,6 +1999,96 @@ function updateSidebarControls() {
     sidebarBrandToggleBtn?.setAttribute("aria-expanded", String(isMobile ? isOpen : !isCollapsed));
 }
 
+function getSidebarMaxWidth() {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-max-width"));
+    return Number.isFinite(value) ? value : 318;
+}
+
+function getSidebarThreshold() {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-collapse-threshold"));
+    return Number.isFinite(value) ? value : getSidebarMaxWidth() / 2;
+}
+
+function clampSidebarWidth(value) {
+    const max = getSidebarMaxWidth();
+    const min = getSidebarThreshold();
+    return Math.min(max, Math.max(min, value));
+}
+
+function setSidebarWidth(value, { persist = true } = {}) {
+    const width = clampSidebarWidth(value);
+    document.documentElement.style.setProperty("--sidebar-width", `${Math.round(width)}px`);
+    if (persist) {
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(width)));
+    }
+    return width;
+}
+
+function loadSidebarWidth() {
+    if (isMobileSidebar()) {
+        document.documentElement.style.removeProperty("--sidebar-width");
+        return;
+    }
+    const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    setSidebarWidth(Number.isFinite(saved) && saved > 0 ? saved : getSidebarMaxWidth(), { persist: false });
+}
+
+function initSidebarResize() {
+    if (!sidebar || !sidebarResizer) return;
+
+    let dragState = null;
+
+    const stopResize = (event) => {
+        if (!dragState) return;
+        const endX = Number.isFinite(event?.clientX) ? event.clientX : dragState.lastX;
+        const nextWidth = dragState.startWidth + endX - dragState.startX;
+        const shouldCollapse = nextWidth <= getSidebarThreshold();
+        document.body.classList.remove("sidebar-resizing");
+        if (dragState.pointerId !== null && sidebarResizer.hasPointerCapture?.(dragState.pointerId)) {
+            sidebarResizer.releasePointerCapture?.(dragState.pointerId);
+        }
+        window.removeEventListener("pointermove", handleResizeMove);
+        window.removeEventListener("pointerup", stopResize);
+        window.removeEventListener("pointercancel", stopResize);
+        window.removeEventListener("blur", stopResize);
+        if (shouldCollapse) {
+            document.body.classList.add("sidebar-collapsed");
+        } else {
+            document.body.classList.remove("sidebar-collapsed");
+            setSidebarWidth(nextWidth);
+        }
+        dragState = null;
+        updateSidebarControls();
+    };
+
+    const handleResizeMove = (event) => {
+        if (!dragState) return;
+        dragState.lastX = event.clientX;
+        const nextWidth = dragState.startWidth + event.clientX - dragState.startX;
+        setSidebarWidth(nextWidth, { persist: false });
+    };
+
+    sidebarResizer.addEventListener("pointerdown", (event) => {
+        if (isMobileSidebar()) return;
+        event.preventDefault();
+        const currentWidth = sidebar.getBoundingClientRect().width || getSidebarMaxWidth();
+        dragState = {
+            startX: event.clientX,
+            startWidth: currentWidth,
+            lastX: event.clientX,
+            pointerId: Number.isFinite(event.pointerId) ? event.pointerId : null,
+        };
+        document.body.classList.remove("sidebar-collapsed");
+        document.body.classList.add("sidebar-resizing");
+        sidebarResizer.setPointerCapture?.(event.pointerId);
+        window.addEventListener("pointermove", handleResizeMove);
+        window.addEventListener("pointerup", stopResize);
+        window.addEventListener("pointercancel", stopResize);
+        window.addEventListener("blur", stopResize);
+        updateSidebarControls();
+    });
+}
+
 function updateSendButton() {
     sendBtn.disabled = isLoading;
     if (voiceBtn) {
@@ -1367,6 +2099,7 @@ function updateSendButton() {
 function newChat() {
     if (isLoading) return;
 
+    setSidebarPage("chat");
     closeSidebar();
     saveActiveConversation();
     activeConversationId = null;

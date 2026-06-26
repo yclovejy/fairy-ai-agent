@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fairy</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=20260617-vision-orb">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='44' fill='%232568f4'/%3E%3Ccircle cx='50' cy='50' r='25' fill='white'/%3E%3Ccircle cx='50' cy='50' r='13' fill='%23095adf'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -60,6 +60,21 @@
                     </svg>
                     <span>智能体</span>
                 </button>
+                <button class="nav-item" type="button" data-sidebar-page="vision">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"></path>
+                        <circle cx="12" cy="12" r="2.5"></circle>
+                        <path d="M5 4v3M4 5.5h3M19 17v3M17.5 18.5h3"></path>
+                    </svg>
+                    <span>视觉导览</span>
+                </button>
+                <button class="nav-item" type="button" data-sidebar-page="environment">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 15a4 4 0 1 0 6 3.5V7a3 3 0 0 0-6 0z"></path>
+                        <path d="M9 7v9M15 7h5M15 12h4M15 17h5"></path>
+                    </svg>
+                    <span>环境监测</span>
+                </button>
                 <button class="nav-item" type="button" data-sidebar-page="plugins">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M4 10h16v10H4zM7 10V7a5 5 0 0 1 10 0v3"></path>
@@ -91,6 +106,7 @@
             </div>
 
         </aside>
+        <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整侧边栏宽度"></div>
 
         <main class="chat-main">
             <header class="chat-header">
@@ -143,6 +159,178 @@
                 </div>
             </header>
 
+            <section class="vision-workspace" id="vision-workspace" aria-label="AI视觉导览" hidden>
+                <div class="vision-heading">
+                    <div>
+                        <span class="vision-kicker">FAIRY VISION</span>
+                        <h2>AI视觉导览</h2>
+                    </div>
+                    <div class="vision-heading-actions">
+                        <span class="vision-device-state" id="vision-device-state">
+                            <span></span>
+                            等待设备
+                        </span>
+                        <button class="vision-icon-btn" id="vision-refresh-btn" type="button" title="刷新识别记录" aria-label="刷新识别记录">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M20 12a8 8 0 0 1-13.6 5.7M4 12A8 8 0 0 1 17.6 6.3M17 3v4h4M7 21v-4H3"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="vision-stage-shell">
+                    <section class="vision-orb-stage" aria-label="视觉粒子核心">
+                        <canvas id="vision-sphere-canvas" class="vision-sphere-canvas" aria-hidden="true"></canvas>
+                        <div class="vision-orb-glow" aria-hidden="true"></div>
+                        <div class="vision-detection-readout" id="vision-detection-readout" aria-live="polite">
+                            <span class="vision-readout-kicker">TARGET</span>
+                            <strong id="vision-label">等待视觉信号</strong>
+                            <span class="vision-readout-confidence" id="vision-confidence">
+                                <b>--</b>
+                                <small>CONFIDENCE</small>
+                            </span>
+                        </div>
+                        <div class="vision-stage-meta">
+                            <span id="vision-source">K230</span>
+                            <time id="vision-time">--:--:--</time>
+                        </div>
+                    </section>
+
+                    <aside class="vision-info-panel" aria-label="识别信息">
+                        <div class="vision-info-head">
+                            <span>OBJECT PROFILE</span>
+                            <strong id="vision-info-status">STANDBY</strong>
+                        </div>
+                        <div class="vision-confidence-track" aria-hidden="true">
+                            <span id="vision-confidence-bar"></span>
+                        </div>
+                        <p id="vision-description">庐山派或 Mac 模拟端发送识别结果后，Fairy 会在这里生成导览讲解。</p>
+                        <div class="vision-description-loader" id="vision-description-loader" hidden aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <button class="vision-speak-btn" id="vision-speak-btn" type="button" disabled>
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M11 5 6 9H3v6h3l5 4zM15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"></path>
+                            </svg>
+                            <span>播报</span>
+                        </button>
+                    </aside>
+                </div>
+
+                <div class="vision-history-strip" aria-label="识别历史">
+                    <section class="vision-history-panel">
+                        <div class="vision-history-head">
+                            <div>
+                                <span>识别历史</span>
+                                <strong id="vision-history-count">0</strong>
+                            </div>
+                            <button class="vision-icon-btn" id="vision-clear-btn" type="button" title="清空识别历史" aria-label="清空识别历史">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="vision-history-list" id="vision-history-list">
+                            <div class="vision-empty">暂无识别记录</div>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="environment-workspace" id="environment-workspace" aria-label="智慧环境监测" hidden>
+                <div class="environment-heading">
+                    <div>
+                        <span class="environment-kicker">FAIRY SENSE</span>
+                        <h2>智慧环境监测</h2>
+                        <p>ESP32 多传感器实时状态与智能预警</p>
+                    </div>
+                    <div class="environment-heading-actions">
+                        <span class="environment-device-state" id="environment-device-state">
+                            <span></span>
+                            等待 ESP32
+                        </span>
+                        <button class="environment-action-btn secondary" id="environment-simulate-btn" type="button">
+                            演示数据
+                        </button>
+                        <button class="environment-icon-btn" id="environment-refresh-btn" type="button" title="刷新环境数据" aria-label="刷新环境数据">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M20 12a8 8 0 0 1-13.6 5.7M4 12A8 8 0 0 1 17.6 6.3M17 3v4h4M7 21v-4H3"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="environment-status-card" id="environment-status-card" data-level="offline">
+                    <div class="environment-status-orb" aria-hidden="true"></div>
+                    <div>
+                        <span>FAIRY 综合判断</span>
+                        <h3 id="environment-status-label">等待设备</h3>
+                        <p id="environment-status-summary">尚未收到 ESP32 环境数据。</p>
+                    </div>
+                    <time id="environment-updated-at">--:--:--</time>
+                </div>
+
+                <div class="environment-metrics" aria-label="实时环境指标">
+                    <article class="environment-metric temperature">
+                        <span>温度</span>
+                        <strong><b id="environment-temperature">--</b><small>℃</small></strong>
+                        <p>舒适区间 18-30℃</p>
+                    </article>
+                    <article class="environment-metric humidity">
+                        <span>湿度 <em class="metric-source-tag" id="environment-humidity-source">模拟</em></span>
+                        <strong><b id="environment-humidity">--</b><small>%</small></strong>
+                        <p>暂无湿度传感器，仅作界面展示</p>
+                    </article>
+                    <article class="environment-metric light">
+                        <span>光照</span>
+                        <strong><b id="environment-light">--</b><small>相对值</small></strong>
+                        <p>0-1000，结合人体状态判断照明</p>
+                    </article>
+                    <article class="environment-metric motion">
+                        <span>人体活动</span>
+                        <strong><b id="environment-motion">--</b></strong>
+                        <p id="environment-device-name">ESP32 尚未连接</p>
+                    </article>
+                </div>
+
+                <div class="environment-detail-grid">
+                    <section class="environment-panel">
+                        <div class="environment-panel-head">
+                            <div>
+                                <span>RECENT SIGNAL</span>
+                                <h3>最近读数</h3>
+                            </div>
+                            <strong id="environment-history-count">0 条</strong>
+                        </div>
+                        <div class="environment-chart" id="environment-chart" aria-label="温湿度变化图">
+                            <svg viewBox="0 0 600 190" preserveAspectRatio="none" aria-hidden="true">
+                                <path class="environment-chart-grid" d="M0 38H600M0 95H600M0 152H600"></path>
+                                <polyline id="environment-temperature-line" points=""></polyline>
+                                <polyline id="environment-humidity-line" points=""></polyline>
+                            </svg>
+                            <div class="environment-chart-legend">
+                                <span class="temperature">温度</span>
+                                <span class="humidity">湿度</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="environment-panel">
+                        <div class="environment-panel-head">
+                            <div>
+                                <span>SMART ADVICE</span>
+                                <h3>告警与建议</h3>
+                            </div>
+                        </div>
+                        <div class="environment-advice-list" id="environment-advice-list">
+                            <div class="environment-empty">接收到数据后，Fairy 会在这里给出判断。</div>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
             <div class="chat-messages" id="chat-messages">
                 <section class="welcome-screen" id="welcome-screen" aria-label="Fairy 欢迎页">
                     <div class="agent-stage">
@@ -161,6 +349,13 @@
                         <span class="agent-stage-mark" id="agent-stage-mark" aria-hidden="true"></span>
                     </div>
                     <h2>我是 Fairy，你的智能管家</h2>
+                    <button class="environment-mini-screen" id="environment-mini-screen" type="button" aria-label="打开环境监测面板">
+                        <span class="environment-mini-state"><i></i><b id="mini-environment-state">ENV WAIT</b></span>
+                        <span><b id="mini-temperature">--℃</b><small>TEMP</small></span>
+                        <span><b id="mini-humidity">--%</b><small>HUM</small></span>
+                        <span><b id="mini-light">--lx</b><small>LIGHT</small></span>
+                        <span><b id="mini-motion">--</b><small>MOTION</small></span>
+                    </button>
                     <div class="breath-lamp" aria-hidden="true"></div>
                 </section>
             </div>
@@ -195,6 +390,7 @@
                         rows="1"
                         autocomplete="off"
                     ></textarea>
+                    <span class="composer-model-hint" id="composer-model-hint">fairy-fast</span>
                     <div class="input-toolbar">
                         <button class="tool-btn" type="button" title="联网搜索" aria-label="联网搜索">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -359,6 +555,6 @@
         </aside>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=20260617-vision-orb"></script>
 </body>
 </html>

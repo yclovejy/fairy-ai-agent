@@ -11,9 +11,10 @@ from typing import Any
 import torch
 from torch import nn
 
+from fairy_core.paths import MODELS_DIR
 
 LABELS = ["体育", "科技", "财经", "娱乐"]
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "news_transformer")
+MODEL_DIR = str(MODELS_DIR / "news_transformer")
 MODEL_PATH = os.path.join(MODEL_DIR, "model.pt")
 VOCAB_PATH = os.path.join(MODEL_DIR, "vocab.json")
 CONFIG_PATH = os.path.join(MODEL_DIR, "config.json")

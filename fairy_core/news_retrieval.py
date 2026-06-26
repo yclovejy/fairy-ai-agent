@@ -10,15 +10,16 @@ from typing import Any
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+from fairy_core.paths import DATA_DIR
+
 try:
     from sentence_transformers import CrossEncoder
 except Exception:
     CrossEncoder = None
 
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VECTOR_STORE_PATH = os.path.join(_BASE_DIR, "data", "news_vector_store.npz")
-VECTOR_META_PATH = os.path.join(_BASE_DIR, "data", "news_vector_store_meta.json")
+VECTOR_STORE_PATH = str(DATA_DIR / "news_vector_store.npz")
+VECTOR_META_PATH = str(DATA_DIR / "news_vector_store_meta.json")
 DEFAULT_RERANKER_MODEL_NAME = "BAAI/bge-reranker-base"
 
 

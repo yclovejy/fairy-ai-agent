@@ -3,17 +3,19 @@ import os
 import re
 import socket
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from agent_v5 import agent_answer, get_agent_profiles  # V5版Agent
-from news_intelligence import NewsIntelligenceService
-from scheduler import start_background_scheduler
-from transformer_bootstrap import ensure_news_transformer_model
-from voice_service import whisper_service
+from fairy_core.agent_v5 import agent_answer, get_agent_profiles  # V5版Agent
+from fairy_core.environment_service import environment_service
+from fairy_core.news_intelligence import NewsIntelligenceService
+from fairy_core.scheduler import start_background_scheduler
+from fairy_core.transformer_bootstrap import ensure_news_transformer_model
+from fairy_core.vision_service import vision_service
+from fairy_core.voice_service import whisper_service
 
 app = FastAPI()
 news_service = NewsIntelligenceService()
@@ -101,6 +103,29 @@ class NewsArticle(BaseModel):
     url: str = ""
 
 
+class VisionDetection(BaseModel):
+    label: str = Field(min_length=1, max_length=100)
+    confidence: float = Field(ge=0, le=1)
+    source: str = Field(default="k230", max_length=80)
+    device_id: str = Field(default="lushan-pi-k230", max_length=120)
+    frame_id: str | None = Field(default=None, max_length=120)
+    bbox: list[float] | None = None
+    captured_at: str | None = None
+    model: str | None = None
+
+
+class EnvironmentReading(BaseModel):
+    device_id: str = Field(default="esp32-classroom-01", min_length=1, max_length=120)
+    temperature: float = Field(ge=-40, le=85)
+    humidity: float = Field(ge=0, le=100)
+    humidity_simulated: bool = False
+    light: float = Field(ge=0, le=1000)
+    light_raw: float | None = Field(default=None, ge=0, le=4095)
+    motion: bool = False
+    firmware_version: str | None = Field(default=None, max_length=80)
+    captured_at: str | None = None
+
+
 def strip_for_tts(text: str) -> str:
     cleaned = re.sub(r"[#*`>\-\[\]]", " ", text or "")
     cleaned = re.sub(r"\s+", " ", cleaned)
@@ -123,12 +148,127 @@ def chat_endpoint(q: Query):
 def list_agents():
     return {"agents": get_agent_profiles()}
 
+
+def verify_vision_key(provided_key: str | None) -> None:
+    expected_key = os.getenv("VISION_API_KEY", "").strip()
+    if expected_key and provided_key != expected_key:
+        raise HTTPException(status_code=401, detail="视觉设备密钥无效。")
+
+
+def verify_iot_key(provided_key: str | None) -> None:
+    expected_key = os.getenv("IOT_API_KEY", "").strip()
+    if expected_key and provided_key != expected_key:
+        raise HTTPException(status_code=401, detail="物联网设备密钥无效。")
+
+
+@app.post("/api/environment/readings")
+def receive_environment_reading(
+    reading: EnvironmentReading,
+    x_iot_key: str | None = Header(default=None),
+):
+    verify_iot_key(x_iot_key)
+    try:
+        item = environment_service.record(
+            device_id=reading.device_id,
+            temperature=reading.temperature,
+            humidity=reading.humidity,
+            humidity_simulated=reading.humidity_simulated,
+            light=reading.light,
+            light_raw=reading.light_raw,
+            motion=reading.motion,
+            firmware_version=reading.firmware_version,
+            captured_at=reading.captured_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "accepted": True,
+        "reading": item,
+        "status": environment_service.evaluate(item),
+    }
+
+
+@app.get("/api/environment/latest")
+def latest_environment_reading():
+    reading = environment_service.latest()
+    return {
+        "reading": reading,
+        "status": environment_service.evaluate(reading),
+    }
+
+
+@app.get("/api/environment/history")
+def environment_history(limit: int = 60):
+    return {"readings": environment_service.history(limit)}
+
+
+@app.post("/api/environment/simulate")
+def simulate_environment_reading():
+    if os.getenv("IOT_SIMULATION_ENABLED", "true").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        raise HTTPException(status_code=403, detail="环境数据模拟功能已关闭。")
+    item = environment_service.simulate()
+    return {
+        "accepted": True,
+        "reading": item,
+        "status": environment_service.evaluate(item),
+    }
+
+
+@app.delete("/api/environment/history")
+def clear_environment_history(x_iot_key: str | None = Header(default=None)):
+    verify_iot_key(x_iot_key)
+    return {"deleted": environment_service.clear_history()}
+
+
+@app.post("/api/vision")
+def receive_vision_detection(
+    detection: VisionDetection,
+    x_vision_key: str | None = Header(default=None),
+):
+    verify_vision_key(x_vision_key)
+    try:
+        item = vision_service.record(
+            label=detection.label,
+            confidence=detection.confidence,
+            source=detection.source,
+            device_id=detection.device_id,
+            frame_id=detection.frame_id,
+            bbox=detection.bbox,
+            captured_at=detection.captured_at,
+            model=resolve_model(detection.model),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"accepted": True, "detection": item}
+
+
+@app.get("/api/vision/latest")
+def latest_vision_detection():
+    return {"detection": vision_service.latest()}
+
+
+@app.get("/api/vision/history")
+def vision_history(limit: int = 50):
+    return {"detections": vision_service.history(limit)}
+
+
+@app.delete("/api/vision/history")
+def clear_vision_history(x_vision_key: str | None = Header(default=None)):
+    verify_vision_key(x_vision_key)
+    return {"deleted": vision_service.clear_history()}
+
+
 @app.post("/news/analyze")
 def analyze_news(article: NewsArticle):
     content = article.content
     article_fetch_status = "not_requested"
     if article.url and not content:
-        from fetch_news import fetch_article_text
+        from fairy_core.fetch_news import fetch_article_text
 
         content = fetch_article_text(article.url)
         article_fetch_status = "ok" if content else "empty"

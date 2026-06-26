@@ -2,7 +2,7 @@ import os
 import threading
 import time
 
-from fetch_news import run_news_pipeline
+from fairy_core.fetch_news import run_news_pipeline
 
 _scheduler_thread = None
 _scheduler_lock = threading.Lock()

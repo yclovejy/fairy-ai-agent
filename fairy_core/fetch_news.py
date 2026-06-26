@@ -13,8 +13,9 @@ from urllib.parse import quote_plus, urljoin, urlparse
 import numpy as np
 import requests
 
-from deepseek_client import deepseek_client
-from news_retrieval import save_vector_store, weighted_news_text
+from fairy_core.deepseek_client import deepseek_client
+from fairy_core.news_retrieval import save_vector_store, weighted_news_text
+from fairy_core.paths import DATA_DIR, PROJECT_ROOT
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -26,10 +27,9 @@ NEWS_API = os.getenv(
     "NEWS_TENCENT_HOT_API_URL",
     "https://i.news.qq.com/web_feed/get_command_pagination?page=1",
 )
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SAVE_PATH = os.path.join(_BASE_DIR, "data", "news.json")
-EMBED_PATH = os.path.join(_BASE_DIR, "data", "news_embeddings.npy")
-GENERATED_TRAIN_PATH = os.path.join(_BASE_DIR, "data", "news_train_generated.jsonl")
+SAVE_PATH = str(DATA_DIR / "news.json")
+EMBED_PATH = str(DATA_DIR / "news_embeddings.npy")
+GENERATED_TRAIN_PATH = str(DATA_DIR / "news_train_generated.jsonl")
 DEFAULT_TENCENT_PAGE_URLS = [
     "https://news.qq.com/",
     "https://new.qq.com/",
@@ -926,7 +926,7 @@ def train_transformer_if_needed(train_enabled, rows):
     ]
 
     print("🧠 开始训练 Transformer 分类器...")
-    completed = subprocess.run(cmd, cwd=_BASE_DIR, check=False)
+    completed = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
     if completed.returncode == 0:
         print("✅ Transformer 训练完成")
     else:

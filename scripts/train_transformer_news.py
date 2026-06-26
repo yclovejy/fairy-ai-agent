@@ -16,7 +16,7 @@ from sklearn.model_selection import train_test_split
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from news_intelligence import CONFIG_PATH, LABELS, MODEL_DIR, MODEL_PATH, VOCAB_PATH, CharTokenizer, TransformerNewsClassifier
+from fairy_core.news_intelligence import CONFIG_PATH, LABELS, MODEL_DIR, MODEL_PATH, VOCAB_PATH, CharTokenizer, TransformerNewsClassifier
 
 
 DATA_PATH = os.path.join(PROJECT_ROOT, "data", "news_train.jsonl")

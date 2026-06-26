@@ -13,6 +13,10 @@ env/
 data/*.json
 data/*.npy
 data/*.npz
+data/environment_history.db
+data/vision_history.db
+esp32/config.py
+devices/esp32/config.py
 data/news_train_generated.jsonl
 models/news_transformer/*.pt
 

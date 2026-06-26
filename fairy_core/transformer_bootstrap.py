@@ -5,14 +5,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+from fairy_core.paths import DATA_DIR, MODELS_DIR, PROJECT_ROOT, SCRIPTS_DIR
 
-BASE_DIR = Path(__file__).resolve().parent
-MODEL_DIR = BASE_DIR / "models" / "news_transformer"
+MODEL_DIR = MODELS_DIR / "news_transformer"
 MODEL_PATH = MODEL_DIR / "model.pt"
 VOCAB_PATH = MODEL_DIR / "vocab.json"
 CONFIG_PATH = MODEL_DIR / "config.json"
-BASE_TRAIN_PATH = BASE_DIR / "data" / "news_train.jsonl"
-GENERATED_TRAIN_PATH = BASE_DIR / "data" / "news_train_generated.jsonl"
+BASE_TRAIN_PATH = DATA_DIR / "news_train.jsonl"
+GENERATED_TRAIN_PATH = DATA_DIR / "news_train_generated.jsonl"
 
 
 def env_flag(name: str, default: bool) -> bool:
@@ -56,7 +56,7 @@ def ensure_news_transformer_model() -> bool:
 
     command = [
         sys.executable,
-        str(BASE_DIR / "scripts" / "train_transformer_news.py"),
+        str(SCRIPTS_DIR / "train_transformer_news.py"),
         "--epochs",
         epochs,
         "--batch-size",
@@ -66,7 +66,7 @@ def ensure_news_transformer_model() -> bool:
         command.extend(["--data-path", str(path)])
 
     print("Transformer model artifacts are missing; starting bootstrap training.")
-    completed = subprocess.run(command, cwd=BASE_DIR, check=False)
+    completed = subprocess.run(command, cwd=PROJECT_ROOT, check=False)
     if completed.returncode != 0:
         print(f"Transformer bootstrap training failed with exit code {completed.returncode}.")
         return False

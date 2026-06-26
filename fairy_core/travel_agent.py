@@ -7,8 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from deepseek_client import deepseek_client
-from travel_qa.qa_service import TravelQAService
+from fairy_core.deepseek_client import deepseek_client
+from fairy_core.paths import PROJECT_ROOT
+from fairy_core.travel_qa.qa_service import TravelQAService
 
 
 TOURISM_PROMPT = """你是中国旅游问答资料整理助手。
@@ -231,4 +232,4 @@ class FairyTravelAgent:
         return "\n".join(lines)
 
 
-travel_agent = FairyTravelAgent(Path(__file__).resolve().parent)
+travel_agent = FairyTravelAgent(PROJECT_ROOT)

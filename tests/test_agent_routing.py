@@ -2,8 +2,8 @@ import unittest
 import ast
 from pathlib import Path
 
-import agent_v5
-from deepseek_client import deepseek_client
+import fairy_core.agent_v5 as agent_v5
+from fairy_core.deepseek_client import deepseek_client
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,8 +70,20 @@ class FairyRoutingTest(unittest.TestCase):
         self.assertGreaterEqual(len(calls), 2)
         self.assertTrue(all(call["model"] == "deepseek-v4-pro" for call in calls))
 
+    def test_environment_agent_is_available_and_routes_explicit_queries(self) -> None:
+        profile_ids = {profile["id"] for profile in agent_v5.get_agent_profiles()}
+        self.assertIn("environment", profile_ids)
+        self.assertEqual(
+            agent_v5.resolve_agent_intent(
+                "environment",
+                "现在教室环境怎么样",
+                "deepseek-v4-flash",
+            ),
+            "environment",
+        )
+
     def test_every_deepseek_call_site_passes_selected_model(self) -> None:
-        for relative_path in ("agent_v5.py", "travel_agent.py"):
+        for relative_path in ("fairy_core/agent_v5.py", "fairy_core/travel_agent.py"):
             tree = ast.parse((ROOT / relative_path).read_text(encoding="utf-8"))
             call_sites = []
             for node in ast.walk(tree):
