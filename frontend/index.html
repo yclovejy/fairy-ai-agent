@@ -4,10 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fairy</title>
-    <link rel="stylesheet" href="/static/style.css?v=20260617-vision-orb">
+    <link rel="stylesheet" href="/static/style.css?v=20260718-liquid-layout">
+    <link rel="stylesheet" href="/static/liquid-glass.css?v=20260718-composer-auto">
+    <link rel="stylesheet" href="/static/ios26-glass.css?v=20260718-optical-v2">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='44' fill='%232568f4'/%3E%3Ccircle cx='50' cy='50' r='25' fill='white'/%3E%3Ccircle cx='50' cy='50' r='13' fill='%23095adf'/%3E%3C/svg%3E">
 </head>
 <body>
+    <div class="liquid-backdrop" aria-hidden="true">
+        <span class="liquid-ribbon ribbon-one"></span>
+        <span class="liquid-ribbon ribbon-two"></span>
+        <span class="liquid-ribbon ribbon-three"></span>
+        <span class="liquid-bloom bloom-blue"></span>
+        <span class="liquid-bloom bloom-pink"></span>
+    </div>
     <div class="app-container">
         <button class="sidebar-overlay" id="sidebar-overlay" aria-label="关闭侧边栏"></button>
 
@@ -109,6 +118,12 @@
         <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整侧边栏宽度"></div>
 
         <main class="chat-main">
+            <div class="liquid-ornaments" aria-hidden="true">
+                <i class="liquid-tube tube-top"></i>
+                <i class="liquid-tube tube-right"></i>
+                <i class="liquid-tube tube-bottom"></i>
+                <i class="liquid-drop drop-left"></i>
+            </div>
             <header class="chat-header">
                 <div class="header-left">
                     <button class="mobile-menu-btn" id="sidebar-toggle-btn" type="button" title="打开边栏" aria-label="打开边栏" aria-expanded="false">
@@ -555,6 +570,6 @@
         </aside>
     </div>
 
-    <script src="/static/script.js?v=20260617-vision-orb"></script>
+    <script src="/static/script.js?v=20260718-optical-v1"></script>
 </body>
 </html>

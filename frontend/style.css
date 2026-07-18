@@ -22,8 +22,8 @@
     --radius: 14px;
     --radius-lg: 22px;
     --sidebar-width: 318px;
+    --sidebar-min-width: 248px;
     --sidebar-max-width: 318px;
-    --sidebar-collapse-threshold: 159px;
     --content-width: 1010px;
     --chat-font-size: 16px;
     --input-font-size: 16px;
@@ -190,7 +190,7 @@ body.settings-open {
     display: flex;
     flex: 0 0 var(--sidebar-width);
     flex-direction: column;
-    min-width: 0;
+    min-width: var(--sidebar-min-width);
     max-width: var(--sidebar-max-width);
     overflow-x: hidden;
     overflow-y: auto;
@@ -3999,6 +3999,7 @@ body[data-appearance="dark"] .sidebar-resizer::before {
 
     body.sidebar-collapsed .sidebar {
         flex-basis: 0;
+        min-width: 0;
         border-color: transparent;
         opacity: 0;
         pointer-events: none;
@@ -4017,8 +4018,8 @@ body[data-appearance="dark"] .sidebar-resizer::before {
 @media (max-width: 980px) {
     :root {
         --sidebar-width: 292px;
+        --sidebar-min-width: 248px;
         --sidebar-max-width: 292px;
-        --sidebar-collapse-threshold: 146px;
     }
 
     .app-container {

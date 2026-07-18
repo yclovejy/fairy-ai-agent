@@ -2004,14 +2004,14 @@ function getSidebarMaxWidth() {
     return Number.isFinite(value) ? value : 318;
 }
 
-function getSidebarThreshold() {
-    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-collapse-threshold"));
-    return Number.isFinite(value) ? value : getSidebarMaxWidth() / 2;
+function getSidebarMinWidth() {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-min-width"));
+    return Number.isFinite(value) ? value : 248;
 }
 
 function clampSidebarWidth(value) {
     const max = getSidebarMaxWidth();
-    const min = getSidebarThreshold();
+    const min = getSidebarMinWidth();
     return Math.min(max, Math.max(min, value));
 }
 
@@ -2042,7 +2042,6 @@ function initSidebarResize() {
         if (!dragState) return;
         const endX = Number.isFinite(event?.clientX) ? event.clientX : dragState.lastX;
         const nextWidth = dragState.startWidth + endX - dragState.startX;
-        const shouldCollapse = nextWidth <= getSidebarThreshold();
         document.body.classList.remove("sidebar-resizing");
         if (dragState.pointerId !== null && sidebarResizer.hasPointerCapture?.(dragState.pointerId)) {
             sidebarResizer.releasePointerCapture?.(dragState.pointerId);
@@ -2051,12 +2050,8 @@ function initSidebarResize() {
         window.removeEventListener("pointerup", stopResize);
         window.removeEventListener("pointercancel", stopResize);
         window.removeEventListener("blur", stopResize);
-        if (shouldCollapse) {
-            document.body.classList.add("sidebar-collapsed");
-        } else {
-            document.body.classList.remove("sidebar-collapsed");
-            setSidebarWidth(nextWidth);
-        }
+        document.body.classList.remove("sidebar-collapsed");
+        setSidebarWidth(nextWidth);
         dragState = null;
         updateSidebarControls();
     };
@@ -2284,6 +2279,43 @@ function speakText(text) {
     window.speechSynthesis.speak(utterance);
 }
 
+function initLiquidGlassLighting() {
+    const root = document.documentElement;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let lightFrame = null;
+    let pendingX = 0.5;
+    let pendingY = 0.12;
+
+    const paintLight = () => {
+        lightFrame = null;
+        root.style.setProperty("--glass-light-x", `${(pendingX * 100).toFixed(2)}%`);
+        root.style.setProperty("--glass-light-y", `${(pendingY * 100).toFixed(2)}%`);
+    };
+
+    window.addEventListener("pointermove", (event) => {
+        if (reducedMotion.matches) return;
+        pendingX = Math.min(1, Math.max(0, event.clientX / Math.max(1, window.innerWidth)));
+        pendingY = Math.min(1, Math.max(0, event.clientY / Math.max(1, window.innerHeight)));
+        if (lightFrame === null) {
+            lightFrame = window.requestAnimationFrame(paintLight);
+        }
+    }, { passive: true });
+
+    document.addEventListener("pointerdown", (event) => {
+        if (reducedMotion.matches || !(event.target instanceof Element)) return;
+        const control = event.target.closest(
+            ".icon-btn, .sidebar-tool, .title-switch, .tool-btn, .new-chat-btn, .composer-toggle, .agent-card"
+        );
+        if (!control) return;
+        control.classList.remove("glass-energized");
+        window.requestAnimationFrame(() => {
+            control.classList.add("glass-energized");
+            window.setTimeout(() => control.classList.remove("glass-energized"), 480);
+        });
+    }, { passive: true });
+}
+
 window.addEventListener("beforeunload", saveChatHistory);
 
+document.addEventListener("DOMContentLoaded", initLiquidGlassLighting);
 document.addEventListener("DOMContentLoaded", init);
