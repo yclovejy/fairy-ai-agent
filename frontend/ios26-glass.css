@@ -83,6 +83,40 @@ body[data-appearance="dark"] {
     to { transform: translate3d(3%, -2%, 0) rotate(4deg) scale(1.10); }
 }
 
+/*
+ * Keep large translucent surfaces on stable compositor layers. Moving several
+ * blurred layers beneath backdrop-filter forces Chromium to re-rasterize the
+ * whole app and can present as a page-wide flicker. The material stays rich;
+ * only small controls and the Fairy eye retain continuous motion.
+ */
+.liquid-backdrop::after,
+.liquid-ribbon,
+.liquid-bloom,
+.liquid-tube,
+.liquid-drop,
+body.input-hidden .chat-main::before,
+body.input-hidden .breath-field,
+body.input-hidden .welcome-screen h2 {
+    animation: none !important;
+    will-change: auto;
+}
+
+body.input-hidden .chat-main::before {
+    opacity: 0.78;
+    filter: blur(20px);
+}
+
+body.input-hidden .breath-field {
+    opacity: 0.68;
+    transform: translate3d(0, 0, 0) scale(1);
+    background-position: 0 0, 11px 14px;
+}
+
+body.input-hidden .welcome-screen h2 {
+    opacity: 1;
+    background-position: 50% 50%;
+}
+
 .liquid-ribbon {
     border-color: rgba(255, 255, 255, 0.58);
     background:

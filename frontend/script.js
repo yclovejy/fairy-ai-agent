@@ -2280,26 +2280,7 @@ function speakText(text) {
 }
 
 function initLiquidGlassLighting() {
-    const root = document.documentElement;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let lightFrame = null;
-    let pendingX = 0.5;
-    let pendingY = 0.12;
-
-    const paintLight = () => {
-        lightFrame = null;
-        root.style.setProperty("--glass-light-x", `${(pendingX * 100).toFixed(2)}%`);
-        root.style.setProperty("--glass-light-y", `${(pendingY * 100).toFixed(2)}%`);
-    };
-
-    window.addEventListener("pointermove", (event) => {
-        if (reducedMotion.matches) return;
-        pendingX = Math.min(1, Math.max(0, event.clientX / Math.max(1, window.innerWidth)));
-        pendingY = Math.min(1, Math.max(0, event.clientY / Math.max(1, window.innerHeight)));
-        if (lightFrame === null) {
-            lightFrame = window.requestAnimationFrame(paintLight);
-        }
-    }, { passive: true });
 
     document.addEventListener("pointerdown", (event) => {
         if (reducedMotion.matches || !(event.target instanceof Element)) return;
